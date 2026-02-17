@@ -53,9 +53,8 @@ namespace hive
             {LogSeverity::ERROR, "[ERROR] "}
         };
 
-        // Print severity label
         auto it = severityLabels.find(severity);
-        // HIVE_ASSERT(it != severityLabels.end());
+        if (it == severityLabels.end()) return;
 
         std::cout << it->second;
 
