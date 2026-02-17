@@ -22,7 +22,7 @@ namespace nectar
         // If `to` can already reach `from`, then adding from->to creates a cycle.
         if (CanReach(to, from)) return false;
 
-        // Ensure both nodes exist in forward/reverse maps
+        // Insert nodes if missing
         if (!forward_.Contains(from))
             forward_.Insert(from, wax::Vector<DependencyEdge>{*alloc_});
         if (!forward_.Contains(to))

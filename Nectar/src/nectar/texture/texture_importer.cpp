@@ -91,7 +91,6 @@ namespace nectar
             FlipVertical(pixels, width, height, channels);
 
         // Downscale to max_size (halve until within bounds)
-        // We need a temp buffer for downscaling
         uint8_t* current = pixels;
         uint32_t cur_w = width, cur_h = height;
         uint8_t* downscaled = nullptr;

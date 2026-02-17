@@ -578,8 +578,7 @@ namespace comb
         auto* header = reinterpret_cast<AllocationHeader*>(block);
         header->size = blockSize;
 
-        // Track memory using release mode calculation (excluding guard bytes)
-        // This ensures GetUsedMemory() returns consistent values between debug and release
+        // Track used_memory_ with release layout (no guards) for consistent stats
         size_t releaseTotalSize = size + HeaderPrefix;
         size_t releaseBlockSize = NextPowerOfTwo(releaseTotalSize);
         if (releaseBlockSize < MinBlockSize)

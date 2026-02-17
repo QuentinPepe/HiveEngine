@@ -24,7 +24,7 @@ namespace queen
             return;
         }
 
-        // Ensure pool is started
+        // Start pool if needed
         if (!pool_->IsRunning())
         {
             pool_->Start();
