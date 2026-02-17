@@ -63,7 +63,7 @@ namespace nectar
 
         /// Returns the loaded asset, or placeholder if not ready. nullptr if nothing available.
         template<typename T>
-        T* Get(const StrongHandle<T>& handle) const
+        [[nodiscard]] T* Get(const StrongHandle<T>& handle) const
         {
             if (handle.IsNull()) return GetPlaceholder<T>();
             auto* storage = FindStorage<T>();
@@ -212,7 +212,7 @@ namespace nectar
         AssetStorageFor<T>* FindStorage() const;
 
         template<typename T>
-        T* GetPlaceholder() const
+        [[nodiscard]] T* GetPlaceholder() const
         {
             auto* storage = FindStorage<T>();
             return storage ? storage->GetPlaceholder() : nullptr;
