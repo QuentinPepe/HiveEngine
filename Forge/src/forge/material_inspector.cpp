@@ -5,11 +5,8 @@
 #include <forge/asset_browser.h>
 #include <forge/asset_picker.h>
 #include <forge/editor_undo.h>
+#include <forge/field_widget_factory.h>
 
-#include <QCheckBox>
-#include <QColorDialog>
-#include <QComboBox>
-#include <QDoubleSpinBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFile>
@@ -240,98 +237,61 @@ namespace forge
 
         addRow("Shader", mat.shader);
 
-        auto* blendCombo = new QComboBox;
-        blendCombo->addItems({"opaque", "alpha_test", "alpha_blend"});
-        int blendIdx = blendCombo->findText(mat.blend);
-        if (blendIdx >= 0)
-            blendCombo->setCurrentIndex(blendIdx);
-        connect(blendCombo, &QComboBox::currentTextChanged, this, [matState, saveMat, this](const QString& text) {
-            matState->blend = text;
-            saveMat();
-            emit materialModified();
-        });
+        FieldWidgetOptions blendOpts;
+        blendOpts.enumValues = {"opaque", "alpha_test", "alpha_blend"};
+        auto* blendWidget = CreateFieldWidget(FieldWidgetType::ENUM, mat.blend, blendOpts,
+                                               [matState, saveMat, this](const QString& text) {
+                                                   matState->blend = text;
+                                                   saveMat();
+                                                   emit materialModified();
+                                               }, this);
+        rootLayout->addWidget(CreateFieldRow("Blend", blendWidget, this));
 
-        auto* blendRow = new QWidget;
-        auto* blendLayout = new QHBoxLayout{blendRow};
-        blendLayout->setContentsMargins(4, 0, 4, 0);
-        blendLayout->setSpacing(8);
-        auto* blendLabel = new QLabel{"Blend"};
-        blendLabel->setStyleSheet("color: #888; font-size: 12px;");
-        blendLabel->setFixedWidth(70);
-        blendLayout->addWidget(blendLabel);
-        blendLayout->addWidget(blendCombo, 1);
-        rootLayout->addWidget(blendRow);
+        auto* dsWidget = CreateFieldWidget(FieldWidgetType::BOOL,
+                                            mat.doubleSided ? "true" : "false", {},
+                                            [matState, saveMat, this](const QString& val) {
+                                                matState->doubleSided = (val == "true");
+                                                saveMat();
+                                                emit materialModified();
+                                            }, this);
+        rootLayout->addWidget(CreateFieldRow("Double Sided", dsWidget, this));
 
-        auto* dsCheck = new QCheckBox{"Double Sided"};
-        dsCheck->setChecked(mat.doubleSided);
-        dsCheck->setStyleSheet("color: #e8e8e8; font-size: 12px; margin-left: 78px;");
-        connect(dsCheck, &QCheckBox::toggled, this, [matState, saveMat, this](bool checked) {
-            matState->doubleSided = checked;
-            saveMat();
-            emit materialModified();
-        });
-        rootLayout->addWidget(dsCheck);
-
-        auto addSlider = [&](const char* label, float value, float min, float max,
-                             std::function<void(float)> onChange) {
-            auto* row = new QWidget;
-            auto* hbox = new QHBoxLayout{row};
-            hbox->setContentsMargins(4, 0, 4, 0);
-            hbox->setSpacing(8);
-            auto* lbl = new QLabel{label};
-            lbl->setStyleSheet("color: #888; font-size: 12px;");
-            lbl->setFixedWidth(70);
-            hbox->addWidget(lbl);
-
-            auto* spin = new QDoubleSpinBox;
-            spin->setRange(min, max);
-            spin->setSingleStep(0.01);
-            spin->setDecimals(3);
-            spin->setValue(value);
-            connect(spin, &QDoubleSpinBox::editingFinished, this, [spin, onChange, saveMat, this] {
-                onChange(static_cast<float>(spin->value()));
-                saveMat();
-                emit materialModified();
-            });
-            hbox->addWidget(spin, 1);
-            rootLayout->addWidget(row);
+        auto addMatFloat = [&](const char* label, float value, float min, float max,
+                               std::function<void(float)> onChange) {
+            FieldWidgetOptions opts;
+            opts.floatMin = min;
+            opts.floatMax = max;
+            opts.floatStep = 0.01;
+            opts.floatDecimals = 3;
+            auto* widget = CreateFieldWidget(FieldWidgetType::FLOAT32,
+                                              QString::number(value, 'g', 9), opts,
+                                              [onChange = std::move(onChange), saveMat, this](const QString& text) {
+                                                  onChange(text.toFloat());
+                                                  saveMat();
+                                                  emit materialModified();
+                                              }, this);
+            rootLayout->addWidget(CreateFieldRow(label, widget, this));
         };
 
-        addSlider("Metallic", mat.metallic, 0.f, 1.f, [matState](float v) { matState->metallic = v; });
-        addSlider("Roughness", mat.roughness, 0.f, 1.f, [matState](float v) { matState->roughness = v; });
-        addSlider("Alpha Cut", mat.alphaCutoff, 0.f, 1.f, [matState](float v) { matState->alphaCutoff = v; });
+        addMatFloat("Metallic", mat.metallic, 0.f, 1.f, [matState](float v) { matState->metallic = v; });
+        addMatFloat("Roughness", mat.roughness, 0.f, 1.f, [matState](float v) { matState->roughness = v; });
+        addMatFloat("Alpha Cut", mat.alphaCutoff, 0.f, 1.f, [matState](float v) { matState->alphaCutoff = v; });
 
         QColor currentColor = QColor::fromRgbF(mat.baseColor[0], mat.baseColor[1], mat.baseColor[2], mat.baseColor[3]);
-        auto* colorBtn = new QPushButton;
-        colorBtn->setFixedHeight(24);
-        colorBtn->setStyleSheet(
-            QString{"background: %1; border: 1px solid #2a2a2a; border-radius: 3px;"}.arg(currentColor.name()));
-
-        auto* colorRow = new QWidget;
-        auto* colorLayout = new QHBoxLayout{colorRow};
-        colorLayout->setContentsMargins(4, 0, 4, 0);
-        colorLayout->setSpacing(8);
-        auto* colorLabel = new QLabel{"Base Color"};
-        colorLabel->setStyleSheet("color: #888; font-size: 12px;");
-        colorLabel->setFixedWidth(70);
-        colorLayout->addWidget(colorLabel);
-        colorLayout->addWidget(colorBtn, 1);
-        rootLayout->addWidget(colorRow);
-
-        connect(colorBtn, &QPushButton::clicked, this, [this, colorBtn, matState, saveMat, currentColor] {
-            QColor color = QColorDialog::getColor(currentColor, this, "Base Color");
-            if (color.isValid())
-            {
-                matState->baseColor[0] = static_cast<float>(color.redF());
-                matState->baseColor[1] = static_cast<float>(color.greenF());
-                matState->baseColor[2] = static_cast<float>(color.blueF());
-                matState->baseColor[3] = 1.f;
-                colorBtn->setStyleSheet(
-                    QString{"background: %1; border: 1px solid #2a2a2a; border-radius: 3px;"}.arg(color.name()));
-                saveMat();
-                emit materialModified();
-            }
-        });
+        auto* colorWidget = CreateFieldWidget(FieldWidgetType::COLOR, currentColor.name(), {},
+                                               [matState, saveMat, this](const QString& colorName) {
+                                                   QColor c{colorName};
+                                                   if (c.isValid())
+                                                   {
+                                                       matState->baseColor[0] = static_cast<float>(c.redF());
+                                                       matState->baseColor[1] = static_cast<float>(c.greenF());
+                                                       matState->baseColor[2] = static_cast<float>(c.blueF());
+                                                       matState->baseColor[3] = 1.f;
+                                                       saveMat();
+                                                       emit materialModified();
+                                                   }
+                                               }, this);
+        rootLayout->addWidget(CreateFieldRow("Base Color", colorWidget, this));
 
         auto assetsRoot = path.parent_path();
         auto guidMap = BuildGuidToPathMap(assetsRoot);

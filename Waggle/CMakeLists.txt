@@ -11,6 +11,7 @@ target_sources(Waggle
         src/waggle/app.cpp
         src/waggle/registermodule.cpp
         src/waggle/systems/transform_system.cpp
+        src/waggle/systems/propolis_system.cpp
         src/waggle/engine_runner.cpp
         src/waggle/project/project_manager.cpp
         src/waggle/project/gameplay_module.cpp
@@ -37,6 +38,7 @@ target_link_libraries(Waggle
         Queen
         Hive
         Nectar
+        Propolis
 )
 
 target_link_libraries(Waggle PUBLIC Terra Antennae Swarm)

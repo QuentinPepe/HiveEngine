@@ -11,6 +11,24 @@ target_sources(Forge
         src/forge/theme.cpp
         src/forge/selection.cpp
         src/forge/hierarchy_panel.cpp
+        src/forge/blueprint_panel.cpp
+        src/forge/blueprint_editor.cpp
+        src/forge/blueprint_node.cpp
+        src/forge/blueprint_pin.cpp
+        src/forge/blueprint_connection.cpp
+        src/forge/blueprint_node_palette.cpp
+        include/forge/blueprint_panel.h
+        include/forge/blueprint_editor.h
+        include/forge/blueprint_node.h
+        include/forge/blueprint_pin.h
+        include/forge/blueprint_connection.h
+        include/forge/blueprint_node_palette.h
+        src/forge/blueprint_outline_panel.cpp
+        src/forge/blueprint_node_inspector.cpp
+        src/forge/field_widget_factory.cpp
+        include/forge/blueprint_outline_panel.h
+        include/forge/blueprint_node_inspector.h
+        include/forge/field_widget_factory.h
         src/forge/editor_undo.cpp
         src/forge/inspector_panel.cpp
         src/forge/entity_inspector.cpp
@@ -71,6 +89,7 @@ else()
         PUBLIC
             Queen
             Swarm
+            Propolis
             Qt6::Widgets
         PRIVATE
             Waggle

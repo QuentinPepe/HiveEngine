@@ -1,4 +1,5 @@
 #include <waggle/systems/transform_system.h>
+#include <waggle/systems/propolis_system.h>
 
 #include <hive/math/math.h>
 
@@ -129,6 +130,8 @@ namespace waggle
                 "Engine.WorldAABB")
             .WithResource<Time>()
             .Run(WorldAABBSystem);
+
+        RegisterPropolisSystem(world);
     }
 
 } // namespace waggle

@@ -71,6 +71,7 @@ namespace forge
         SCENE,
         MATERIAL,
         AUDIO,
+        BLUEPRINT,
         UNKNOWN
     };
 
@@ -132,6 +133,7 @@ namespace forge
         void OnFolderTreeContextMenu(const QPoint& pos);
         void OnImportClicked();
         void OnNewFolderClicked();
+        void OnNewBlueprintClicked();
 
         void RenamePath(const std::filesystem::path& fsPath);
         void DeletePath(const std::filesystem::path& fsPath);

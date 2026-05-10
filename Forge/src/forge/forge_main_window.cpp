@@ -1,5 +1,7 @@
 #include <hive/core/log.h>
 
+#include <propolis/runtime/function_registry.h>
+
 #include <queen/reflect/component_registry.h>
 #include <queen/world/world.h>
 
@@ -10,6 +12,10 @@
 #include <waggle/components/transform.h>
 
 #include <forge/asset_browser.h>
+#include <forge/blueprint_editor.h>
+#include <forge/blueprint_node_inspector.h>
+#include <forge/blueprint_outline_panel.h>
+#include <forge/blueprint_panel.h>
 #include <forge/console_panel.h>
 #include <forge/editor_undo.h>
 #include <forge/forge_main_window.h>
@@ -33,7 +39,11 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QPropertyAnimation>
+#include <QCloseEvent>
+#include <QFileInfo>
 #include <QStackedWidget>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
 
@@ -253,6 +263,12 @@ namespace forge
 
     void ForgeMainWindow::closeEvent(QCloseEvent* event)
     {
+        if (!PromptAllDirtyBlueprints())
+        {
+            event->ignore();
+            return;
+        }
+
         if (m_sceneDirty)
         {
             auto answer = QMessageBox::question(
@@ -344,9 +360,19 @@ namespace forge
 
         fileMenu->addSeparator();
 
-        auto* saveAction = fileMenu->addAction("&Save Scene");
+        auto* saveAction = fileMenu->addAction("&Save");
         saveAction->setShortcut(QKeySequence{"Ctrl+S"});
-        connect(saveAction, &QAction::triggered, this, &ForgeMainWindow::saveRequested);
+        connect(saveAction, &QAction::triggered, this, [this]() {
+            auto* panel = qobject_cast<BlueprintPanel*>(m_centralTabs->currentWidget());
+            if (panel)
+            {
+                panel->Save();
+            }
+            else
+            {
+                emit saveRequested();
+            }
+        });
 
         auto* saveAsAction = fileMenu->addAction("Save Scene &As...");
         saveAsAction->setShortcut(QKeySequence{"Ctrl+Shift+S"});
@@ -377,15 +403,32 @@ namespace forge
 
     void ForgeMainWindow::CreateDocks()
     {
+        // Left dock: stacked Hierarchy / Blueprint Outline
         m_hierarchy = new HierarchyPanel{*m_selection, *m_editorUndo, this};
-        auto* hierarchyDock = new QDockWidget{"Hierarchy", this};
-        hierarchyDock->setWidget(m_hierarchy);
-        addDockWidget(Qt::LeftDockWidgetArea, hierarchyDock);
-        m_docks.append(hierarchyDock);
+        m_blueprintOutline = new BlueprintOutlinePanel{this};
 
+        m_leftStack = new QStackedWidget{this};
+        m_leftStack->addWidget(m_hierarchy);
+        m_leftStack->addWidget(m_blueprintOutline);
+        m_leftStack->setCurrentIndex(0);
+
+        m_leftDock = new QDockWidget{"Hierarchy", this};
+        m_leftDock->setWidget(m_leftStack);
+        addDockWidget(Qt::LeftDockWidgetArea, m_leftDock);
+        m_docks.append(m_leftDock);
+
+        // Right dock: stacked Inspector / Blueprint Node Inspector
         m_inspector = new InspectorPanel{this};
+        m_blueprintInspector = new BlueprintNodeInspector{this};
+        m_blueprintInspector->SetComponentRegistry(m_registry);
+
+        m_rightStack = new QStackedWidget{this};
+        m_rightStack->addWidget(m_inspector);
+        m_rightStack->addWidget(m_blueprintInspector);
+        m_rightStack->setCurrentIndex(0);
+
         auto* inspectorDock = new QDockWidget{"Inspector", this};
-        inspectorDock->setWidget(m_inspector);
+        inspectorDock->setWidget(m_rightStack);
         inspectorDock->setMinimumWidth(300);
         addDockWidget(Qt::RightDockWidgetArea, inspectorDock);
         m_docks.append(inspectorDock);
@@ -431,7 +474,31 @@ namespace forge
         m_docks.append(consoleDock);
 
         m_viewport = new VulkanViewportWidget{this};
-        setCentralWidget(m_viewport);
+
+        m_centralTabs = new QTabWidget{this};
+        m_centralTabs->setTabPosition(QTabWidget::North);
+        m_centralTabs->setDocumentMode(true);
+        m_centralTabs->setTabsClosable(true);
+        m_centralTabs->addTab(m_viewport, "Viewport");
+
+        // Viewport tab is not closable
+        m_centralTabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
+
+        connect(m_centralTabs, &QTabWidget::currentChanged, this, &ForgeMainWindow::OnCentralTabChanged);
+        connect(m_centralTabs, &QTabWidget::tabCloseRequested, this, &ForgeMainWindow::OnCentralTabClosed);
+
+        m_centralTabs->setStyleSheet(R"(
+            QTabWidget::pane { border: none; }
+            QTabBar { background: #0d0d0d; border: none; }
+            QTabBar::tab {
+                background: transparent; color: #666; border: none;
+                padding: 8px 24px; margin: 0px 1px;
+                border-bottom: 2px solid transparent;
+            }
+            QTabBar::tab:selected { color: #f0a500; border-bottom: 2px solid #f0a500; }
+            QTabBar::tab:hover:!selected { color: #aaa; }
+        )");
+        setCentralWidget(m_centralTabs);
     }
 
     void ForgeMainWindow::ConnectSignals()
@@ -573,7 +640,170 @@ namespace forge
                 hive::LogWarning(LOG_FORGE, "Unsupported asset drop: {}", path.toStdString());
             }
         });
+
+        connect(m_assetBrowser, &AssetBrowserPanel::assetOpenRequested, this,
+                [this](const QString& path, AssetType type) {
+                    if (type == AssetType::BLUEPRINT)
+                    {
+                        OpenBlueprint(path);
+                    }
+                });
+
+        connect(m_blueprintOutline, &BlueprintOutlinePanel::variableSelected, this,
+                [this](uint32_t varId) { m_blueprintInspector->InspectVariable(varId); });
+        connect(m_blueprintOutline, &BlueprintOutlinePanel::nothingSelected, this,
+                [this]() { m_blueprintInspector->ShowGraphProperties(); });
+        connect(m_blueprintInspector, &BlueprintNodeInspector::graphModified, this,
+                [this]() { m_blueprintOutline->Refresh(); });
     }
+
+    void ForgeMainWindow::SwitchToViewportMode()
+    {
+        m_leftStack->setCurrentIndex(0);
+        m_rightStack->setCurrentIndex(0);
+        m_leftDock->setWindowTitle("Hierarchy");
+        m_blueprintOutline->SetEditor(nullptr);
+        m_blueprintInspector->SetEditor(nullptr);
+    }
+
+    void ForgeMainWindow::SwitchToBlueprintMode(BlueprintPanel* panel)
+    {
+        if (!panel)
+        {
+            return;
+        }
+
+        auto* editor = panel->Editor();
+        m_blueprintOutline->SetEditor(editor);
+        m_blueprintInspector->SetEditor(editor);
+
+        disconnect(editor, &BlueprintEditor::nodeSelected,
+                   m_blueprintInspector, &BlueprintNodeInspector::InspectNode);
+        disconnect(editor, &BlueprintEditor::selectionCleared,
+                   m_blueprintInspector, &BlueprintNodeInspector::ShowGraphProperties);
+
+        connect(editor, &BlueprintEditor::nodeSelected,
+                m_blueprintInspector, &BlueprintNodeInspector::InspectNode);
+        connect(editor, &BlueprintEditor::selectionCleared,
+                m_blueprintInspector, &BlueprintNodeInspector::ShowGraphProperties);
+
+        m_leftStack->setCurrentIndex(1);
+        m_rightStack->setCurrentIndex(1);
+        m_blueprintInspector->Clear();
+        m_leftDock->setWindowTitle("My Blueprint");
+    }
+
+    void ForgeMainWindow::OnCentralTabChanged(int index)
+    {
+        if (index < 0)
+        {
+            return;
+        }
+
+        auto* widget = m_centralTabs->widget(index);
+        if (widget == m_viewport)
+        {
+            SwitchToViewportMode();
+        }
+        else
+        {
+            auto* panel = qobject_cast<BlueprintPanel*>(widget);
+            if (panel)
+            {
+                SwitchToBlueprintMode(panel);
+            }
+        }
+    }
+
+    void ForgeMainWindow::OnCentralTabClosed(int index)
+    {
+        auto* widget = m_centralTabs->widget(index);
+        if (widget == m_viewport)
+        {
+            return;
+        }
+
+        auto* panel = qobject_cast<BlueprintPanel*>(widget);
+        if (panel && panel->IsDirty())
+        {
+            if (!panel->PromptSaveIfDirty())
+            {
+                return;
+            }
+        }
+
+        m_centralTabs->removeTab(index);
+        widget->deleteLater();
+
+        if (m_centralTabs->currentWidget() == m_viewport)
+        {
+            SwitchToViewportMode();
+        }
+    }
+
+    BlueprintPanel* ForgeMainWindow::ActiveBlueprintPanel()
+    {
+        return qobject_cast<BlueprintPanel*>(m_centralTabs->currentWidget());
+    }
+
+    bool ForgeMainWindow::PromptAllDirtyBlueprints()
+    {
+        for (int i = 0; i < m_centralTabs->count(); ++i)
+        {
+            auto* panel = qobject_cast<BlueprintPanel*>(m_centralTabs->widget(i));
+            if (panel && panel->IsDirty())
+            {
+                m_centralTabs->setCurrentIndex(i);
+                if (!panel->PromptSaveIfDirty())
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    void ForgeMainWindow::OpenBlueprint(const QString& filePath)
+    {
+        // Check if already open — activate existing tab
+        for (int i = 0; i < m_centralTabs->count(); ++i)
+        {
+            auto* panel = qobject_cast<BlueprintPanel*>(m_centralTabs->widget(i));
+            if (panel && panel->FilePath() == filePath)
+            {
+                m_centralTabs->setCurrentIndex(i);
+                return;
+            }
+        }
+
+        auto* panel = new BlueprintPanel{this};
+        panel->Editor()->SetUndoManager(m_editorUndo);
+        queen::World* world = m_world;
+        panel->Editor()->SetFunctionRegistryProvider([world]() -> const propolis::FunctionRegistry* {
+            return world ? world->Resource<propolis::FunctionRegistry>() : nullptr;
+        });
+        if (!filePath.isEmpty())
+        {
+            panel->LoadFromFile(filePath);
+        }
+
+        QFileInfo info{filePath};
+        QString tabName = info.baseName().isEmpty() ? "Untitled" : info.baseName();
+        int tabIndex = m_centralTabs->addTab(panel, tabName);
+        m_centralTabs->setCurrentIndex(tabIndex);
+
+        connect(panel, &BlueprintPanel::dirtyChanged, this, [this, panel](bool dirty) {
+            int idx = m_centralTabs->indexOf(panel);
+            if (idx < 0)
+            {
+                return;
+            }
+            QString base = panel->FilePath().isEmpty() ? "Untitled" :
+                QFileInfo{panel->FilePath()}.baseName();
+            m_centralTabs->setTabText(idx, dirty ? base + " *" : base);
+        });
+    }
+
     void ForgeMainWindow::ShowProgress(const QString& title)
     {
         if (!m_progressOverlay)

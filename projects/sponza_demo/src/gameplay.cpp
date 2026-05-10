@@ -15,6 +15,9 @@
 #include <nectar/hive/hive_writer.h>
 #include <nectar/vfs/virtual_filesystem.h>
 
+#include <propolis/macros/blueprint_function.h>
+#include <propolis/runtime/function_registry.h>
+
 #include <waggle/app_context.h>
 #include <waggle/project/project_context.h>
 #include <waggle/project/project_manager.h>
@@ -277,9 +280,19 @@ namespace
     }
 } // namespace
 
+HIVE_BLUEPRINT_FUNCTION_3(SmoothDamp, "Math", float,
+    float, current,
+    float, target,
+    float, smoothing)
+{
+    return current + (target - current) * smoothing;
+}
+
 HIVE_GAMEPLAY_EXPORT void HiveGameplayRegister(queen::World& world)
 {
     InitGameplayAllocator();
+
+    propolis::RegisterAllBlueprintFunctions(world);
 
     const waggle::RuntimeContext* runtime = world.Resource<waggle::RuntimeContext>();
     if (runtime == nullptr || runtime->m_mode != waggle::EngineMode::HEADLESS)

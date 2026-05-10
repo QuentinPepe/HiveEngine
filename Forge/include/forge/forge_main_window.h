@@ -23,6 +23,10 @@ namespace queen
 namespace forge
 {
     class AssetBrowserPanel;
+    class BlueprintEditor;
+    class BlueprintNodeInspector;
+    class BlueprintOutlinePanel;
+    class BlueprintPanel;
     class ConsolePanel;
     class EditorSelection;
     class EditorToolbar;
@@ -76,10 +80,19 @@ namespace forge
         void sceneModified();
         void buildRequested();
 
+    public slots:
+        void OpenBlueprint(const QString& filePath);
+        bool PromptAllDirtyBlueprints();
+
     private:
         void CreateMenus();
         void CreateDocks();
         void ConnectSignals();
+        void SwitchToViewportMode();
+        void SwitchToBlueprintMode(BlueprintPanel* panel);
+        void OnCentralTabChanged(int index);
+        void OnCentralTabClosed(int index);
+        BlueprintPanel* ActiveBlueprintPanel();
 
         queen::World* m_world{};
         EditorSelection* m_selection{};
@@ -99,5 +112,12 @@ namespace forge
         QList<class QDockWidget*> m_docks;
         QString m_sceneName;
         bool m_sceneDirty{false};
+
+        BlueprintOutlinePanel* m_blueprintOutline{};
+        BlueprintNodeInspector* m_blueprintInspector{};
+        class QTabWidget* m_centralTabs{};
+        class QStackedWidget* m_leftStack{};
+        class QStackedWidget* m_rightStack{};
+        class QDockWidget* m_leftDock{};
     };
 } // namespace forge

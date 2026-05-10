@@ -19,6 +19,7 @@ function(brood_link_test_target target)
                 Waggle
                 Nectar
                 Drone
+                Propolis
         )
 
         foreach(_module IN ITEMS Terra Antennae Swarm Forge)
@@ -68,6 +69,14 @@ if(WIN32)
     target_link_libraries(hive_launcher PRIVATE Ole32 Shell32)
 endif()
 
+# ============================================================================
+# Propolis Compiler (CLI tool: .propolis -> .cpp)
+# ============================================================================
+
+add_executable(propolis_compiler src/propolis_compiler_main.cpp)
+hive_configure_target(propolis_compiler)
+target_link_libraries(propolis_compiler PRIVATE Propolis Hive Comb Wax Queen)
+
 if(HIVE_BUILD_TESTING)
 
     set(BROOD_TEST_DIRS
@@ -80,6 +89,7 @@ if(HIVE_BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/../Queen/tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../Nectar/tests
         ${CMAKE_CURRENT_SOURCE_DIR}/../Waggle/tests
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Propolis/tests
     )
 
     set(BROOD_BENCHMARK_DIRS

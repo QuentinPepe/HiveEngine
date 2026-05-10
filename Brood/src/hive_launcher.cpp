@@ -9,6 +9,7 @@
 #include <waggle/app_context.h>
 #include <waggle/disabled_propagation.h>
 #include <waggle/systems/transform_system.h>
+#include <waggle/systems/propolis_system.h>
 #include <waggle/engine_runner.h>
 #include <waggle/project/gameplay_module.h>
 #include <waggle/project/project_context.h>
@@ -409,6 +410,7 @@ namespace
                 if (s.m_pendingDllReload && ctx.m_world != nullptr)
                 {
                     s.m_pendingDllReload = false;
+                    waggle::PreparePropolisReload(*ctx.m_world);
                     if (s.m_gameplay.IsLoaded())
                     {
                         s.m_gameplay.Unregister(*ctx.m_world);

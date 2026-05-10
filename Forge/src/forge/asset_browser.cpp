@@ -1,5 +1,7 @@
 #include <forge/asset_browser.h>
 
+#include <propolis/graph/graph.h>
+
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDrag>
@@ -399,6 +401,8 @@ namespace forge
             return AssetType::MATERIAL;
         if (ext == ".wav" || ext == ".ogg" || ext == ".flac" || ext == ".mp3")
             return AssetType::AUDIO;
+        if (ext == ".propolis")
+            return AssetType::BLUEPRINT;
         return AssetType::UNKNOWN;
     }
 
@@ -425,6 +429,8 @@ namespace forge
             return QColor{0xef, 0x53, 0x50};
         case AssetType::AUDIO:
             return QColor{0xff, 0xf1, 0x76};
+        case AssetType::BLUEPRINT:
+            return QColor{0x4a, 0x90, 0xd9};
         default:
             return QColor{0x90, 0x90, 0x90};
         }
@@ -1371,6 +1377,7 @@ namespace forge
                            "QMenu::separator { background: #2a2a2a; height: 1px; margin: 4px 8px; }");
 
         menu.addAction("New Folder", this, &AssetBrowserPanel::OnNewFolderClicked);
+        menu.addAction("New Blueprint", this, &AssetBrowserPanel::OnNewBlueprintClicked);
         menu.addAction("Import...", this, &AssetBrowserPanel::OnImportClicked);
         menu.addSeparator();
 
@@ -1426,6 +1433,10 @@ namespace forge
             menu.addAction("New Folder", this, [this, fsPath] {
                 NavigateTo(fsPath);
                 OnNewFolderClicked();
+            });
+            menu.addAction("New Blueprint", this, [this, fsPath] {
+                NavigateTo(fsPath);
+                OnNewBlueprintClicked();
             });
             menu.addSeparator();
 
@@ -1583,6 +1594,46 @@ namespace forge
             [newPath] { std::error_code ec; std::filesystem::remove_all(newPath, ec); },
             [newPath] { std::error_code ec; std::filesystem::create_directory(newPath, ec); });
         Refresh();
+    }
+
+    void AssetBrowserPanel::OnNewBlueprintClicked()
+    {
+        if (m_currentDir.empty())
+        {
+            return;
+        }
+
+        bool ok = false;
+        auto name = QInputDialog::getText(this, "New Blueprint", "Blueprint name:",
+                                          QLineEdit::Normal, "NewBlueprint", &ok);
+        if (!ok || name.isEmpty())
+        {
+            return;
+        }
+
+        auto filePath = m_currentDir / (name.toStdString() + ".propolis");
+        if (std::filesystem::exists(filePath))
+        {
+            QMessageBox::warning(this, "Error", "A file with that name already exists.");
+            return;
+        }
+
+        propolis::Graph graph;
+        graph.SetName(name.toUtf8().constData());
+        graph.SetMode(propolis::GraphMode::ENTITY_SCRIPT);
+        wax::String json = graph.SerializeToJson();
+
+        QFile file{QString::fromStdString(filePath.generic_string())};
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        {
+            QMessageBox::warning(this, "Error", "Failed to create blueprint file.");
+            return;
+        }
+        file.write(json.CStr(), static_cast<qint64>(json.Size()));
+        file.close();
+
+        Refresh();
+        emit assetOpenRequested(QString::fromStdString(filePath.generic_string()), AssetType::BLUEPRINT);
     }
 
     void AssetBrowserPanel::RenamePath(const std::filesystem::path& fsPath)
