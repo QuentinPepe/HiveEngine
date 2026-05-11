@@ -12,6 +12,9 @@ target_sources(Waggle
         src/waggle/registermodule.cpp
         src/waggle/systems/transform_system.cpp
         src/waggle/systems/propolis_system.cpp
+        src/waggle/systems/mesh_render_system.cpp
+        src/waggle/systems/editor_camera_system.cpp
+        src/waggle/render/render_module.cpp
         src/waggle/engine_runner.cpp
         src/waggle/project/project_manager.cpp
         src/waggle/project/gameplay_module.cpp

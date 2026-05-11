@@ -2,7 +2,13 @@
 #include <hive/core/moduleregistry.h>
 #include <hive/profiling/profiler.h>
 
+#include <comb/default_allocator.h>
+#include <comb/new.h>
+
 #include <waggle/engine_runner.h>
+#include <waggle/render/render_module.h>
+#include <waggle/systems/editor_camera_system.h>
+#include <waggle/systems/mesh_render_system.h>
 
 #include <swarm/swarm.h>
 
@@ -26,17 +32,12 @@ namespace
             : m_config{config}
             , m_callbacks{callbacks}
             , m_app{config.m_app}
-            , m_framePipeline{config.m_jobs}
         {
             m_context.m_app = &m_app;
             m_context.m_world = &m_app.GetWorld();
             m_context.m_jobs = config.m_jobs;
             if (config.m_jobs.IsValid())
                 m_app.SetJobSubmitter(config.m_jobs);
-            // TODO: FramePipeline is prepared but not wired yet. When the render graph
-            // is implemented, call BeginFrame()/SubmitRender()/WaitRender() in the frame
-            // loop to overlap simulation and rendering.
-            m_context.m_framePipeline = config.m_jobs.IsValid() ? &m_framePipeline : nullptr;
             m_app.GetWorld().InsertResource(waggle::RuntimeContext{config.m_mode});
 
             terra::SetWindowTitle(m_windowContext, config.m_windowTitle);
@@ -153,9 +154,14 @@ namespace
                 return false;
             }
 
-            swarm::SetupGraphicPipeline(*m_renderContext);
             m_rendererInitialized = true;
             m_context.m_renderContext = m_renderContext;
+
+            m_renderModule = comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), m_renderContext);
+            if (m_renderModule != nullptr && !m_renderModule->IsReady())
+            {
+                hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
+            }
             return true;
         }
 
@@ -187,6 +193,48 @@ namespace
             RunHeadlessLoop();
         }
 
+        float ComputeAspect(terra::WindowContext* window) const
+        {
+            if (window == nullptr)
+            {
+                return 1.f;
+            }
+            const int w = terra::GetWindowWidth(window);
+            const int h = terra::GetWindowHeight(window);
+            if (w <= 0 || h <= 0)
+            {
+                return 1.f;
+            }
+            return static_cast<float>(w) / static_cast<float>(h);
+        }
+
+        void EnsureRenderModule(swarm::RenderContext* renderContext)
+        {
+            if (m_renderModule != nullptr || renderContext == nullptr)
+            {
+                return;
+            }
+            m_renderModule = comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), renderContext);
+            if (m_renderModule != nullptr && !m_renderModule->IsReady())
+            {
+                hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
+            }
+        }
+
+        void RenderECS(terra::WindowContext* window)
+        {
+            if (m_renderModule == nullptr)
+            {
+                return;
+            }
+            waggle::RenderMeshes(m_app.GetWorld(), *m_renderModule, ComputeAspect(window), m_config.m_jobs);
+        }
+
+        void TickEditorCameras()
+        {
+            waggle::UpdateEditorCameras(m_app.GetWorld());
+        }
+
         void RunDeferredLoop()
         {
             while (m_app.IsRunning())
@@ -195,11 +243,25 @@ namespace
 
                 if (m_context.m_window != nullptr)
                 {
+                    // PollEvents clears mouse deltas before pumping. Run Qt's pump *after*
+                    // so messages it dispatches accumulate into the freshly-cleared delta
+                    // (and our native filter writes m_keys for the same frame UpdateInput reads).
                     terra::PollEvents(m_context.m_window);
+                    if (m_callbacks.m_onPrePoll != nullptr)
+                    {
+                        m_callbacks.m_onPrePoll(m_context, m_callbacks.m_userData);
+                    }
                     antennae::UpdateInput(m_app.GetWorld(), m_context.m_window);
+                    TickEditorCameras();
 
                     if (terra::ShouldWindowClose(m_context.m_window))
                         break;
+                }
+                else if (m_callbacks.m_onPrePoll != nullptr)
+                {
+                    // Before any Terra window exists (Project Hub, deferred-window startup),
+                    // pump Qt's event loop directly so the editor UI can show and respond.
+                    m_callbacks.m_onPrePoll(m_context, m_callbacks.m_userData);
                 }
 
                 if (m_config.m_autoTick)
@@ -209,6 +271,7 @@ namespace
 
                 if (m_context.m_renderContext != nullptr)
                 {
+                    EnsureRenderModule(m_context.m_renderContext);
                     swarm::BeginFrame(m_context.m_renderContext);
                 }
 
@@ -219,6 +282,7 @@ namespace
 
                 if (m_context.m_renderContext != nullptr)
                 {
+                    RenderECS(m_context.m_window);
                     swarm::EndFrame(m_context.m_renderContext);
                 }
             }
@@ -230,7 +294,12 @@ namespace
             {
                 HIVE_PROFILE_SCOPE_N("Frame");
                 terra::PollEvents(m_windowContext);
+                if (m_callbacks.m_onPrePoll != nullptr)
+                {
+                    m_callbacks.m_onPrePoll(m_context, m_callbacks.m_userData);
+                }
                 antennae::UpdateInput(m_app.GetWorld(), m_windowContext);
+                TickEditorCameras();
 
                 if (m_config.m_autoTick)
                 {
@@ -249,6 +318,7 @@ namespace
 
                 if (m_rendererInitialized)
                 {
+                    RenderECS(m_windowContext);
                     swarm::EndFrame(m_renderContext);
                 }
             }
@@ -285,37 +355,38 @@ namespace
 
         void Cleanup()
         {
-            if (m_rendererInitialized)
+            if (m_renderModule != nullptr)
             {
-                swarm::DestroyRenderContext(m_renderContext);
-                m_rendererInitialized = false;
+                comb::Delete(comb::GetDefaultAllocator(), m_renderModule);
+                m_renderModule = nullptr;
             }
-            else if (m_context.m_renderContext != nullptr)
+
+            // Either path that owned a render context implies swarm::InitSystem was called.
+            // Capture the "need shutdown" flag before destroying the context.
+            const bool needRendererShutdown =
+                m_rendererSystemInitialized || m_context.m_renderContext != nullptr;
+            if (m_context.m_renderContext != nullptr)
             {
                 swarm::DestroyRenderContext(m_context.m_renderContext);
-                swarm::ShutdownSystem();
+                m_context.m_renderContext = nullptr;
             }
-            m_context.m_renderContext = nullptr;
-
-            if (m_rendererSystemInitialized)
+            m_renderContext = nullptr;
+            m_rendererInitialized = false;
+            if (needRendererShutdown)
             {
                 swarm::ShutdownSystem();
                 m_rendererSystemInitialized = false;
             }
 
-            if (m_windowInitialized)
-            {
-                terra::DestroyWindowContext(m_windowContext);
-                m_windowInitialized = false;
-            }
-            else if (m_context.m_window != nullptr)
+            const bool needWindowShutdown = m_windowSystemInitialized || m_context.m_window != nullptr;
+            if (m_context.m_window != nullptr)
             {
                 terra::DestroyWindowContext(m_context.m_window);
-                terra::ShutdownSystem();
+                m_context.m_window = nullptr;
             }
-            m_context.m_window = nullptr;
-
-            if (m_windowSystemInitialized)
+            m_windowContext = nullptr;
+            m_windowInitialized = false;
+            if (needWindowShutdown)
             {
                 terra::ShutdownSystem();
                 m_windowSystemInitialized = false;
@@ -337,7 +408,6 @@ namespace
         const waggle::EngineCallbacks& m_callbacks;
         hive::ModuleRegistry m_moduleRegistry{};
         waggle::App m_app;
-        drone::FramePipeline m_framePipeline;
         waggle::EngineContext m_context{};
         bool m_modulesInitialized{false};
         bool m_setupCompleted{false};
@@ -350,6 +420,8 @@ namespace
         swarm::RenderContext* m_renderContext{nullptr};
         bool m_rendererSystemInitialized{false};
         bool m_rendererInitialized{false};
+
+        waggle::RenderModule* m_renderModule{nullptr};
     };
 } // namespace
 
@@ -395,7 +467,6 @@ namespace waggle
             return false;
         }
 
-        swarm::SetupGraphicPipeline(*renderCtx);
         ctx.m_renderContext = renderCtx;
         return true;
     }

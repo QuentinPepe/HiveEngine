@@ -2,7 +2,6 @@
 
 #include <hive/hive_config.h>
 
-#include <drone/frame_pipeline.h>
 #include <drone/job_submitter.h>
 
 #include <waggle/app.h>
@@ -40,7 +39,6 @@ namespace waggle
         queen::World* m_world{nullptr};
         terra::WindowContext* m_window{nullptr};
         swarm::RenderContext* m_renderContext{nullptr};
-        drone::FramePipeline* m_framePipeline{nullptr};
         drone::JobSubmitter m_jobs{};
     };
 
@@ -53,15 +51,16 @@ namespace waggle
 
         RegisterModulesFn m_onRegisterModules{nullptr};
         SetupFn m_onSetup{nullptr};
+        // Called at the very start of each frame before terra::PollEvents. Editor hosts
+        // (e.g. Forge) pump Qt's event loop here so native input filters write into Terra's
+        // InputState before antennae::UpdateInput samples it.
+        FrameFn m_onPrePoll{nullptr};
         FrameFn m_onFrame{nullptr};
         ShutdownFn m_onShutdown{nullptr};
 
         void* m_userData{nullptr};
     };
 
-    // Main engine entry point.
-    // Manages the full lifecycle: modules -> window -> device -> swapchain -> loop -> cleanup.
-    // Returns 0 on success.
     HIVE_API int Run(const EngineConfig& config, const EngineCallbacks& callbacks);
 
     HIVE_API bool CreateWindowAndRenderer(EngineContext& ctx, const char* title, uint32_t width, uint32_t height);
