@@ -295,9 +295,14 @@ HIVE_GAMEPLAY_EXPORT void HiveGameplayRegister(queen::World& world)
     propolis::RegisterAllBlueprintFunctions(world);
 
     const waggle::RuntimeContext* runtime = world.Resource<waggle::RuntimeContext>();
-    if (runtime == nullptr || runtime->m_mode != waggle::EngineMode::HEADLESS)
+    if (runtime == nullptr)
     {
-        hive::LogInfo(LOG_SPONZA, "Sponza Demo registered with headless simulation disabled");
+        hive::LogWarning(LOG_SPONZA, "Sponza Demo: RuntimeContext missing, headless simulation skipped");
+        return;
+    }
+    if (runtime->m_mode != waggle::EngineMode::HEADLESS)
+    {
+        hive::LogInfo(LOG_SPONZA, "Sponza Demo registered");
         return;
     }
 
@@ -308,7 +313,7 @@ HIVE_GAMEPLAY_EXPORT void HiveGameplayRegister(queen::World& world)
     RegisterSimulationSystem(world);
     RegisterFinalizeSystem(world);
 
-    hive::LogInfo(LOG_SPONZA, "Sponza Demo registered");
+    hive::LogInfo(LOG_SPONZA, "Sponza Demo registered (headless simulation enabled)");
 }
 
 HIVE_GAMEPLAY_EXPORT void HiveGameplayUnregister(queen::World& world)
