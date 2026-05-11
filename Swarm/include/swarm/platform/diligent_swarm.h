@@ -1,15 +1,43 @@
 #pragma once
+
+#include <swarm/swarm.h>
+
 #include <RenderDevice.h>
+
+#include <cstdint>
+
 namespace swarm
 {
+    inline constexpr uint32_t kMaxDeferredContexts = 16;
+
     struct RenderContext
     {
         Diligent::IRenderDevice* m_device{nullptr};
+        // Immediate context: owns submission to GPU. Used only for ExecuteCommandLists + Present.
         Diligent::IDeviceContext* m_context{nullptr};
+        Diligent::ISwapChain* m_swapchain{nullptr};
 
-        Diligent::ISwapChain* m_swapchain{nullptr}; // Can be null if offscreen rendering
+        // Deferred contexts: workers record draw commands here. Index 0 is also used when
+        // rendering single-threaded so the codepath is identical.
+        Diligent::IDeviceContext* m_deferredContexts[kMaxDeferredContexts]{};
+        uint32_t m_deferredContextCount{0};
 
-        // TEMP
-        Diligent::IPipelineState* m_pipeline{nullptr};
+        // Shared scene constants. View buffer (b0) is per-frame; object buffer (b1) is per-draw.
+        // Both are bound as STATIC variables on every material pipeline state.
+        Diligent::IBuffer* m_viewConstantBuffer{nullptr};
+        Diligent::IBuffer* m_objectConstantBuffer{nullptr};
+
+        // CPU mirror of the view cbuffer. Updated by SetView/SetLighting,
+        // uploaded lazily before each DrawMesh when dirty.
+        ViewParams m_viewParams{};
+        LightingParams m_lightingParams{};
+        // Tracks per-deferred-context dirty state for view constants. Dynamic buffers have
+        // per-context suballocations, so each deferred context must flush its own copy.
+        bool m_viewDirty[kMaxDeferredContexts]{};
+        // True if any command (draw, SetRenderTargets, Clear, ...) was recorded into the
+        // deferred ctx this frame. FinishCommandList on an untouched deferred ctx crashes
+        // the Vulkan validation layer because Diligent allocates the underlying VkCommandBuffer
+        // lazily on first recording.
+        bool m_deferredHasWork[kMaxDeferredContexts]{};
     };
 } // namespace swarm

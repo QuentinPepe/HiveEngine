@@ -252,13 +252,14 @@ if(HIVE_BUILD_SHARED)
         $<TARGET_OBJECTS:Drone>
         $<TARGET_OBJECTS:Queen>
         $<TARGET_OBJECTS:Nectar>
+        $<TARGET_OBJECTS:Propolis>
         $<TARGET_OBJECTS:Terra>
         $<TARGET_OBJECTS:Antennae>
         $<TARGET_OBJECTS:Swarm>
         $<TARGET_OBJECTS:Waggle>
     )
 
-    foreach(_mod Hive Comb Drone Queen Nectar Terra Antennae Swarm Waggle)
+    foreach(_mod Hive Comb Drone Queen Nectar Propolis Terra Antennae Swarm Waggle)
         target_compile_definitions(${_mod} PRIVATE HIVE_ENGINE_BUILDING_DLL=1)
     endforeach()
     target_compile_definitions(hive_engine INTERFACE
@@ -275,6 +276,7 @@ if(HIVE_BUILD_SHARED)
         Drone/include
         Queen/include
         Nectar/include
+        Propolis/include
         Terra/include
         Antennae/include
         Swarm/include

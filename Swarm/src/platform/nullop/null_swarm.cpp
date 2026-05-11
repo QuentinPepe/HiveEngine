@@ -21,9 +21,33 @@ namespace swarm
     void WaitForIdle(RenderContext* /*ctx*/) {}
     void ResizeSwapchain(RenderContext* /*ctx*/, uint32_t /*width*/, uint32_t /*height*/) {}
 
-    void Render(RenderContext* /*renderContext*/) {}
-    void DrawPipeline(RenderContext* /*ctx*/) {}
-    void SetupGraphicPipeline(RenderContext& /*renderContext*/) {}
+    Mesh* CreateMesh(RenderContext* /*ctx*/, const MeshDesc& /*desc*/)
+    {
+        return nullptr;
+    }
+    void DestroyMesh(Mesh* /*mesh*/) {}
+
+    Material* CreateStandardMaterial(RenderContext* /*ctx*/)
+    {
+        return nullptr;
+    }
+    void DestroyMaterial(Material* /*material*/) {}
+
+    void SetView(RenderContext* /*ctx*/, const ViewParams& /*view*/) {}
+    void SetLighting(RenderContext* /*ctx*/, const LightingParams& /*lighting*/) {}
+    void DrawMesh(RenderContext* /*ctx*/, const Mesh* /*mesh*/, const Material* /*material*/,
+                  const hive::math::Mat4& /*world*/)
+    {
+    }
+    void DrawMesh(RenderContext* /*ctx*/, uint32_t /*workerIndex*/, const Mesh* /*mesh*/,
+                  const Material* /*material*/, const hive::math::Mat4& /*world*/)
+    {
+    }
+    uint32_t GetDeferredContextCount(const RenderContext* /*ctx*/)
+    {
+        return 0;
+    }
+    void PrepareWorkerFrame(RenderContext* /*ctx*/, uint32_t /*workerIndex*/) {}
 
     ViewportRT* CreateViewportRT(RenderContext* /*ctx*/, uint32_t /*width*/, uint32_t /*height*/)
     {

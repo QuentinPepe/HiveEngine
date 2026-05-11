@@ -49,6 +49,11 @@ set(DILIGENT_NO_WEBGPU ON CACHE BOOL "" FORCE)
 set(DILIGENT_NO_ARCHIVER ON CACHE BOOL "" FORCE)
 set(DILIGENT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(DILIGENT_INSTALL_CORE OFF CACHE BOOL "" FORCE)
+# clang-cl rejects /GL (whole program optimization) — strip it from Diligent's MSVC release defaults.
+set(DILIGENT_MSVC_RELEASE_COMPILE_OPTIONS "" CACHE STRING "" FORCE)
+# SPIRV-Tools defaults SPIRV_WERROR=ON which adds /WX. Combined with /GL being ignored by clang-cl,
+# every TU fails with -Werror,-Wunused-command-line-argument. Disable to let warnings stay warnings.
+set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${HIVE_DILIGENT_SOURCE_DIR}" diligentcore)
 

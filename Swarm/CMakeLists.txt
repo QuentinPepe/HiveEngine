@@ -266,6 +266,10 @@ if(NOT _swarm_using_prebuilt_diligent)
     set(DILIGENT_NO_ARCHIVER ON CACHE BOOL "" FORCE)
     set(DILIGENT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(DILIGENT_INSTALL_CORE OFF CACHE BOOL "" FORCE)
+    # clang-cl rejects /GL — strip it from Diligent's MSVC release defaults.
+    set(DILIGENT_MSVC_RELEASE_COMPILE_OPTIONS "" CACHE STRING "" FORCE)
+    # SPIRV-Tools defaults SPIRV_WERROR=ON; combined with clang-cl, /GL becomes a fatal error.
+    set(SPIRV_WERROR OFF CACHE BOOL "" FORCE)
     add_subdirectory(extern/diligentcore SYSTEM)
     swarm_fix_diligent_targets("${CMAKE_CURRENT_SOURCE_DIR}/extern/diligentcore")
     message(STATUS "Swarm: using source Diligent fallback from ${_swarm_diligent_source_dir}")
@@ -284,6 +288,9 @@ target_sources(Swarm
         src/swarmmodule.cpp
         src/platform/diligent/diligent_swarm.cpp
         src/platform/diligent/diligent_swarm_vulkan.cpp
+        src/platform/diligent/diligent_mesh.cpp
+        src/platform/diligent/diligent_material.cpp
+        src/platform/diligent/diligent_scene.cpp
 )
 
 if(UNIX)
@@ -300,9 +307,15 @@ target_include_directories(Swarm
 )
 
 target_include_directories(Swarm
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/diligent
+)
+
+target_include_directories(Swarm
     SYSTEM PRIVATE
         ${_swarm_diligent_source_dir}/Common/interface
         ${_swarm_diligent_source_dir}/Graphics/GraphicsEngineVulkan/interface
+        ${_swarm_diligent_source_dir}/Graphics/GraphicsTools/interface
 )
 
 target_precompile_headers(Swarm
