@@ -16,7 +16,11 @@
 #include <nectar/hive/hive_parser.h>
 #include <nectar/hive/hive_writer.h>
 
+#include <hive/math/transforms.h>
+
 #include <waggle/components/camera.h>
+#include <waggle/components/editor_camera.h>
+#include <waggle/components/editor_only.h>
 #include <waggle/components/lighting.h>
 #include <waggle/components/mesh_reference.h>
 #include <waggle/components/name.h>
@@ -28,6 +32,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <utility>
 
 namespace brood::launcher
 {
@@ -49,6 +54,21 @@ namespace brood::launcher
             registry.Register<waggle::MeshReference>();
     }
 
+    void SpawnEditorBaseCamera(queen::World& world)
+    {
+        const hive::math::Float3 position{0.f, 5.f, 25.f};
+        const hive::math::Mat4 cameraWorld = hive::math::Translation(position);
+        waggle::EditorCameraController controller{};
+        controller.m_moveSpeed = 50.f;
+        (void)world.Spawn(waggle::Name{wax::FixedString{"Editor Camera"}},
+                          waggle::Transform{position, hive::math::Quat{}, hive::math::Float3{1.f, 1.f, 1.f}},
+                          waggle::WorldMatrix{cameraWorld},
+                          waggle::TransformVersion{},
+                          waggle::Camera{hive::math::Radians(60.f), 0.1f, 5000.f},
+                          std::move(controller),
+                          waggle::EditorOnly{});
+    }
+
     void ResetSceneEditorState(LauncherState& state)
     {
         state.m_selection.Clear();
@@ -67,7 +87,7 @@ namespace brood::launcher
             for (uint32_t row = 0; row < archetype.EntityCount(); ++row)
             {
                 const queen::Entity entity = archetype.GetEntity(row);
-                if (world.GetParent(entity).IsNull())
+                if (world.GetParent(entity).IsNull() && !world.Has<waggle::EditorOnly>(entity))
                 {
                     roots.PushBack(entity);
                 }
@@ -86,7 +106,11 @@ namespace brood::launcher
         world.ForEachArchetype([&](auto& archetype) {
             for (uint32_t row = 0; row < archetype.EntityCount(); ++row)
             {
-                leftovers.PushBack(archetype.GetEntity(row));
+                const queen::Entity entity = archetype.GetEntity(row);
+                if (!world.Has<waggle::EditorOnly>(entity))
+                {
+                    leftovers.PushBack(entity);
+                }
             }
         });
 
@@ -600,6 +624,9 @@ namespace brood::launcher
     wax::String CaptureSceneBackup(queen::World& world, const queen::ComponentRegistry<256>& registry)
     {
         queen::DynamicWorldSerializer serializer{};
+        // Editor-owned entities (e.g. the persistent editor camera) survive ClearWorldEntities,
+        // so excluding them from the backup avoids duplicating them on restore.
+        serializer.SkipArchetypesWith<waggle::EditorOnly>();
         const auto result = serializer.Serialize(world, registry);
         if (!result.m_success)
         {
@@ -618,7 +645,12 @@ namespace brood::launcher
         }
 
         const auto result = queen::WorldDeserializer::Deserialize(world, registry, backupScene.CStr());
-        return result.m_success;
+        if (!result.m_success)
+        {
+            return false;
+        }
+        forge::EnsureRuntimeTransformComponents(world);
+        return true;
     }
 
     bool LoadEditorScene(waggle::EngineContext& ctx, LauncherState& state, const std::filesystem::path& scenePath)

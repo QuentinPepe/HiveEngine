@@ -5,6 +5,7 @@
 #include <queen/world/world.h>
 
 #include <waggle/components/disabled.h>
+#include <waggle/components/editor_only.h>
 #include <waggle/components/name.h>
 #include <waggle/components/sibling_index.h>
 #include <waggle/disabled_propagation.h>
@@ -19,6 +20,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMenu>
+#include <QMimeData>
 #include <QPainter>
 #include <QShortcut>
 #include <QTreeWidget>
@@ -101,7 +103,17 @@ namespace forge
                 return;
             }
 
-            if (source && source != this)
+            static const char* ASSET_PATH_MIME = "application/x-hive-asset-paths";
+            if (e->mimeData()->hasFormat(ASSET_PATH_MIME))
+            {
+                auto paths =
+                    QString::fromUtf8(e->mimeData()->data(ASSET_PATH_MIME)).split('\n', Qt::SkipEmptyParts);
+                if (!paths.isEmpty() && onAssetDropped)
+                {
+                    onAssetDropped(paths.first());
+                }
+            }
+            else if (source && source != this)
             {
                 auto items = source->selectedItems();
                 if (!items.isEmpty())
@@ -545,6 +557,10 @@ namespace forge
             {
                 return;
             }
+            if (arch.template HasComponent<waggle::EditorOnly>())
+            {
+                return;
+            }
             for (uint32_t row = 0; row < arch.EntityCount(); ++row)
             {
                 roots.PushBack(arch.GetEntity(row));
@@ -732,6 +748,8 @@ namespace forge
         wax::Vector<queen::Entity> roots{forge::GetAllocator()};
         m_currentWorld->ForEachArchetype([&](auto& arch) {
             if (arch.template HasComponent<queen::Parent>())
+                return;
+            if (arch.template HasComponent<waggle::EditorOnly>())
                 return;
             for (uint32_t row = 0; row < arch.EntityCount(); ++row)
                 roots.PushBack(arch.GetEntity(row));

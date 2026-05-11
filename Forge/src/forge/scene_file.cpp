@@ -1,10 +1,14 @@
 #include <forge/scene_file.h>
 
 #include <hive/core/log.h>
+#include <hive/math/transforms.h>
 
 #include <queen/reflect/world_deserializer.h>
 #include <queen/reflect/world_serializer.h>
 #include <queen/world/world.h>
+
+#include <waggle/components/editor_only.h>
+#include <waggle/components/transform.h>
 
 #include <forge/forge_module.h>
 
@@ -19,6 +23,7 @@ namespace forge
     bool SaveScene(queen::World& world, const queen::ComponentRegistry<256>& registry, const char* path)
     {
         queen::DynamicWorldSerializer serializer{};
+        serializer.SkipArchetypesWith<waggle::EditorOnly>();
         auto result = serializer.Serialize(world, registry);
         if (!result.m_success)
         {
@@ -76,8 +81,40 @@ namespace forge
             return false;
         }
 
-        hive::LogInfo(LOG_FORGE, "Scene loaded: {} ({} entities, {} components, {} skipped)", path,
-                      result.m_entitiesLoaded, result.m_componentsLoaded, result.m_componentsSkipped);
+        EnsureRuntimeTransformComponents(world);
+
+        hive::LogInfo(LOG_FORGE, "Scene loaded: {} ({} entities, {} components, {} skipped)",
+                      path, result.m_entitiesLoaded, result.m_componentsLoaded, result.m_componentsSkipped);
         return true;
+    }
+
+    void EnsureRuntimeTransformComponents(queen::World& world)
+    {
+        wax::Vector<queen::Entity> needWorldMatrix{forge::GetAllocator()};
+        world.ForEachArchetype([&](auto& archetype) {
+            if (!archetype.template HasComponent<waggle::Transform>())
+            {
+                return;
+            }
+            if (archetype.template HasComponent<waggle::WorldMatrix>())
+            {
+                return;
+            }
+            for (uint32_t row = 0; row < archetype.EntityCount(); ++row)
+            {
+                needWorldMatrix.PushBack(archetype.GetEntity(row));
+            }
+        });
+        for (queen::Entity entity : needWorldMatrix)
+        {
+            auto* transform = world.Get<waggle::Transform>(entity);
+            const hive::math::Mat4 matrix = transform != nullptr
+                                                ? hive::math::TRS(transform->m_position,
+                                                                  transform->m_rotation,
+                                                                  transform->m_scale)
+                                                : hive::math::Mat4::Identity();
+            world.Add(entity, waggle::WorldMatrix{matrix});
+            world.Add(entity, waggle::TransformVersion{});
+        }
     }
 } // namespace forge

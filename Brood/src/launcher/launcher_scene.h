@@ -30,6 +30,7 @@ namespace brood::launcher
     void RegisterSceneComponentTypes(LauncherState& state);
     void ResetSceneEditorState(LauncherState& state);
     void ClearWorldEntities(queen::World& world);
+    void SpawnEditorBaseCamera(queen::World& world);
 
     std::filesystem::path GetProjectAssetsDirectory(const LauncherState& state);
     std::filesystem::path CanonicalizePathForComparison(const std::filesystem::path& path);

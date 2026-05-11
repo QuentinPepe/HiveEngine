@@ -136,6 +136,7 @@ namespace
 
 #if HIVE_MODE_EDITOR
                 RegisterSceneComponentTypes(s);
+                SpawnEditorBaseCamera(*ctx.m_world);
 #endif
 
 #if HIVE_MODE_EDITOR
@@ -404,6 +405,17 @@ namespace
                 return true;
             };
 
+#if HIVE_MODE_EDITOR
+            callbacks.m_onPrePoll = [](waggle::EngineContext&, void* ud) {
+                QApplication::processEvents();
+                auto& s = *static_cast<LauncherState*>(ud);
+                if (s.m_mainWindow != nullptr)
+                {
+                    s.m_mainWindow->PollEditorInput();
+                }
+            };
+#endif
+
             callbacks.m_onFrame = [](waggle::EngineContext& ctx, void* ud) {
                 auto& s = *static_cast<LauncherState*>(ud);
 
@@ -431,14 +443,6 @@ namespace
                 {
                     if (s.m_project != nullptr && s.m_project->LastReloadCount() > 0)
                         s.m_mainWindow->RefreshAll();
-
-                    s.m_mainWindow->RenderFrame();
-                    QApplication::processEvents();
-                }
-#elif HIVE_FEATURE_VULKAN || HIVE_FEATURE_D3D12
-                if (ctx.m_renderContext != nullptr)
-                {
-                    swarm::DrawPipeline(ctx.m_renderContext);
                 }
 #endif
             };

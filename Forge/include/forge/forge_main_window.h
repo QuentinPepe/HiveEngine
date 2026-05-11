@@ -54,8 +54,8 @@ namespace forge
         void SetAssetsRoot(const char* path);
         void SetSceneDirty(bool dirty);
         void SetSceneName(const QString& name);
-        void AttachViewport(terra::WindowContext* window, swarm::RenderContext* ctx);
-        void RenderFrame();
+        void AttachViewport(terra::WindowContext* window, swarm::RenderContext* renderContext);
+        void PollEditorInput();
 
         void ShowProgress(const QString& title);
         void ProgressSetStep(const QString& step);
@@ -105,7 +105,6 @@ namespace forge
         EditorToolbar* m_toolbar{};
         ProjectHub* m_hub{};
         QWidget* m_loadingWidget{};
-        QWidget* m_editorWidget{};
         ProgressOverlay* m_progressOverlay{};
         EditorUndoManager* m_editorUndo{};
         bool m_inspectorLocked{false};

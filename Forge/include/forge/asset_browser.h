@@ -96,6 +96,7 @@ namespace forge
         explicit AssetBrowserPanel(EditorUndoManager* undoManager, QWidget* parent = nullptr);
 
         void SetAssetsRoot(const char* path);
+        [[nodiscard]] const std::filesystem::path& Root() const noexcept { return m_root; }
         void Refresh();
         void MoveAsset(const std::filesystem::path& src, const std::filesystem::path& dstDir);
         void NavigateToFile(const std::filesystem::path& filePath);

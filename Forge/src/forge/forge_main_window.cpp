@@ -54,6 +54,105 @@
 
 static const hive::LogCategory LOG_FORGE{"Forge"};
 
+namespace
+{
+    std::string ResolveMeshVfsPath(const std::filesystem::path& meshPath,
+                                   const std::filesystem::path& assetsRoot,
+                                   const std::string& fallbackName)
+    {
+        if (assetsRoot.empty())
+        {
+            return fallbackName;
+        }
+        std::error_code ec;
+        auto relative = std::filesystem::relative(meshPath, assetsRoot, ec);
+        if (ec || relative.empty())
+        {
+            return fallbackName;
+        }
+        return relative.generic_string();
+    }
+
+    bool ReadNmshSubmeshes(const std::filesystem::path& meshPath, std::vector<nectar::SubMesh>* submeshes)
+    {
+        FILE* file{nullptr};
+#ifdef _WIN32
+        fopen_s(&file, meshPath.string().c_str(), "rb");
+#else
+        file = fopen(meshPath.string().c_str(), "rb");
+#endif
+        if (file == nullptr)
+        {
+            return false;
+        }
+
+        nectar::NmshHeader header{};
+        bool ok = false;
+        if (std::fread(&header, sizeof(header), 1, file) == 1 && header.m_magic == nectar::kNmshMagic)
+        {
+            submeshes->resize(header.m_submeshCount);
+            std::fread(submeshes->data(), sizeof(nectar::SubMesh), header.m_submeshCount, file);
+            ok = true;
+        }
+        std::fclose(file);
+        return ok;
+    }
+
+    waggle::MeshReference MakeMeshReference(const std::string& meshVfsPath, int32_t submeshIndex,
+                                            const nectar::SubMesh* submesh)
+    {
+        waggle::MeshReference ref{};
+        ref.m_meshName = wax::FixedString{meshVfsPath.c_str()};
+        if (submesh != nullptr)
+        {
+            ref.m_meshIndex = submeshIndex;
+            ref.m_indexCount = submesh->m_indexCount;
+            ref.m_materialIndex = submesh->m_materialIndex;
+            char matName[32];
+            std::snprintf(matName, sizeof(matName), "Material_%d", submesh->m_materialIndex);
+            ref.m_materialName = wax::FixedString{matName};
+        }
+        else
+        {
+            ref.m_indexCount = 1;
+        }
+        return ref;
+    }
+
+    void SpawnNmshEntities(queen::World& world, const std::filesystem::path& meshPath,
+                           const std::filesystem::path& assetsRoot)
+    {
+        const auto meshName = meshPath.stem().string();
+        const auto meshVfsPath = ResolveMeshVfsPath(meshPath, assetsRoot, meshName);
+
+        std::vector<nectar::SubMesh> submeshes;
+        ReadNmshSubmeshes(meshPath, &submeshes);
+
+        if (submeshes.size() <= 1)
+        {
+            auto ref = MakeMeshReference(meshVfsPath, 0, nullptr);
+            (void)world.Spawn(waggle::Name{wax::FixedString{meshName.c_str()}}, waggle::Transform{},
+                              waggle::WorldMatrix{}, waggle::TransformVersion{}, std::move(ref));
+            hive::LogInfo(LOG_FORGE, "Spawned mesh entity: {} ({})", meshName, meshVfsPath);
+            return;
+        }
+
+        queen::Entity root = world.Spawn(waggle::Name{wax::FixedString{meshName.c_str()}}, waggle::Transform{},
+                                         waggle::WorldMatrix{}, waggle::TransformVersion{});
+
+        for (uint32_t i = 0; i < submeshes.size(); ++i)
+        {
+            char primName[128];
+            std::snprintf(primName, sizeof(primName), "%s_prim%u", meshName.c_str(), i);
+            auto ref = MakeMeshReference(meshVfsPath, static_cast<int32_t>(i), &submeshes[i]);
+            queen::Entity child = world.Spawn(waggle::Name{wax::FixedString{primName}}, waggle::Transform{},
+                                              waggle::WorldMatrix{}, waggle::TransformVersion{}, std::move(ref));
+            world.SetParent(child, root);
+        }
+        hive::LogInfo(LOG_FORGE, "Spawned mesh hierarchy: {} ({} primitives)", meshName, submeshes.size());
+    }
+} // namespace
+
 static QIcon MakeHexIcon()
 {
     QPixmap pix{64, 64};
@@ -333,19 +432,26 @@ namespace forge
         return m_toolbar;
     }
 
-    void ForgeMainWindow::AttachViewport(terra::WindowContext* window, swarm::RenderContext* ctx)
+    void ForgeMainWindow::AttachViewport(terra::WindowContext* window, swarm::RenderContext* renderContext)
     {
         if (m_viewport)
         {
             m_viewport->EmbedGlfwWindow(window);
-            m_viewport->SetRenderContext(ctx);
+            m_viewport->SetRenderContext(renderContext);
         }
     }
 
-    void ForgeMainWindow::RenderFrame()
+    void ForgeMainWindow::PollEditorInput()
     {
-        if (m_viewport)
-            m_viewport->RenderFrame();
+        if (m_viewport == nullptr)
+        {
+            return;
+        }
+        auto* bridge = m_viewport->InputBridge();
+        if (bridge != nullptr)
+        {
+            bridge->PollKeyboard();
+        }
     }
 
     void ForgeMainWindow::CreateMenus()
@@ -557,88 +663,19 @@ namespace forge
                 return;
 
             std::filesystem::path fsPath{path.toStdString()};
-            auto ext = fsPath.extension().string();
-
-            if (ext == ".nmsh")
-            {
-                auto meshName = fsPath.stem().string();
-
-                nectar::NmshHeader header{};
-                uint32_t submeshCount{0};
-
-                FILE* f{nullptr};
-#ifdef _WIN32
-                fopen_s(&f, fsPath.string().c_str(), "rb");
-#else
-                f = fopen(fsPath.string().c_str(), "rb");
-#endif
-                std::vector<nectar::SubMesh> submeshes;
-                if (f)
-                {
-                    if (std::fread(&header, sizeof(header), 1, f) == 1 && header.m_magic == nectar::kNmshMagic)
-                    {
-                        submeshCount = header.m_submeshCount;
-                        submeshes.resize(submeshCount);
-                        std::fread(submeshes.data(), sizeof(nectar::SubMesh), submeshCount, f);
-                    }
-                    std::fclose(f);
-                }
-
-                if (submeshCount <= 1)
-                {
-                    waggle::MeshReference meshRef{};
-                    meshRef.m_meshName = wax::FixedString{meshName.c_str()};
-                    meshRef.m_indexCount = 1;
-
-                    (void)m_world->Spawn(waggle::Name{wax::FixedString{meshName.c_str()}}, waggle::Transform{},
-                                         waggle::WorldMatrix{}, waggle::TransformVersion{}, std::move(meshRef));
-                    hive::LogInfo(LOG_FORGE, "Spawned mesh entity: {}", meshName);
-                }
-                else
-                {
-                    queen::Entity root =
-                        m_world->Spawn(waggle::Name{wax::FixedString{meshName.c_str()}}, waggle::Transform{},
-                                       waggle::WorldMatrix{}, waggle::TransformVersion{});
-
-                    for (uint32_t si = 0; si < submeshCount; ++si)
-                    {
-                        char primName[128];
-                        std::snprintf(primName, sizeof(primName), "%s_prim%u", meshName.c_str(), si);
-
-                        waggle::MeshReference meshRef{};
-                        meshRef.m_meshName = wax::FixedString{meshName.c_str()};
-                        meshRef.m_meshIndex = static_cast<int32_t>(si);
-
-                        if (si < submeshes.size())
-                        {
-                            meshRef.m_indexCount = submeshes[si].m_indexCount;
-                            meshRef.m_materialIndex = submeshes[si].m_materialIndex;
-                            char matName[32];
-                            std::snprintf(matName, sizeof(matName), "Material_%d", submeshes[si].m_materialIndex);
-                            meshRef.m_materialName = wax::FixedString{matName};
-                        }
-
-                        queen::Entity child =
-                            m_world->Spawn(waggle::Name{wax::FixedString{primName}}, waggle::Transform{},
-                                           waggle::WorldMatrix{}, waggle::TransformVersion{}, std::move(meshRef));
-
-                        m_world->SetParent(child, root);
-                    }
-
-                    hive::LogInfo(LOG_FORGE, "Spawned mesh hierarchy: {} ({} primitives)", meshName, submeshCount);
-                }
-
-                RefreshAll();
-                emit m_hierarchy->sceneModified();
-            }
-            else if (ext == ".hscene")
-            {
-                hive::LogInfo(LOG_FORGE, "Scene drop not yet implemented: {}", fsPath.string());
-            }
-            else
+            const auto ext = fsPath.extension().string();
+            if (ext != ".nmsh")
             {
                 hive::LogWarning(LOG_FORGE, "Unsupported asset drop: {}", path.toStdString());
+                return;
             }
+
+            const std::filesystem::path assetsRoot =
+                m_assetBrowser != nullptr ? m_assetBrowser->Root() : std::filesystem::path{};
+            SpawnNmshEntities(*m_world, fsPath, assetsRoot);
+
+            RefreshAll();
+            emit m_hierarchy->sceneModified();
         });
 
         connect(m_assetBrowser, &AssetBrowserPanel::assetOpenRequested, this,
