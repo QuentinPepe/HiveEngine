@@ -6,9 +6,7 @@ namespace hive::math
 {
     [[nodiscard]] inline Mat4 PerspectiveRhZo(float fovRad, float aspect, float zNear, float zFar)
     {
-        Mat4 result = FromHMM(HMM_Perspective_RH_ZO(fovRad, aspect, zNear, zFar));
-        result.m_m[1][1] *= -1.f;
-        return result;
+        return FromHMM(HMM_Perspective_RH_ZO(fovRad, aspect, zNear, zFar));
     }
 
     [[nodiscard]] inline Mat4 PerspectiveRhNo(float fovRad, float aspect, float zNear, float zFar)
@@ -34,9 +32,7 @@ namespace hive::math
     [[nodiscard]] inline Mat4 OrthographicRhZo(float left, float right, float bottom, float top, float zNear,
                                                float zFar)
     {
-        Mat4 result = FromHMM(HMM_Orthographic_RH_ZO(left, right, bottom, top, zNear, zFar));
-        result.m_m[1][1] *= -1.f;
-        return result;
+        return FromHMM(HMM_Orthographic_RH_ZO(left, right, bottom, top, zNear, zFar));
     }
 
     [[nodiscard]] inline Mat4 OrthographicRhNo(float left, float right, float bottom, float top, float zNear,

@@ -30,6 +30,17 @@ namespace queen
         public:
             WorldSerializerCore() noexcept = default;
 
+            // Entities whose archetype contains any of these typeIds are skipped entirely
+            // (no entity entry written). Used by the editor to keep its persistent camera
+            // out of saved scene files.
+            template <typename Tag> void SkipArchetypesWith() noexcept
+            {
+                if (m_skipTypeCount < kMaxSkipTypes)
+                {
+                    m_skipTypes[m_skipTypeCount++] = TypeIdOf<Tag>();
+                }
+            }
+
             template <size_t MaxComponents>
             WorldSerializeResult Serialize(World& world, const ComponentRegistry<MaxComponents>& registry) noexcept
             {
@@ -48,6 +59,16 @@ namespace queen
                     }
 
                     const auto& types = archetype.GetComponentTypes();
+                    for (size_t typeIndex = 0; typeIndex < types.Size(); ++typeIndex)
+                    {
+                        for (size_t skipIndex = 0; skipIndex < m_skipTypeCount; ++skipIndex)
+                        {
+                            if (types[typeIndex] == m_skipTypes[skipIndex])
+                            {
+                                return;
+                            }
+                        }
+                    }
                     for (uint32_t row = 0; row < archetype.EntityCount(); ++row)
                     {
                         if (!m_writer.Success())
@@ -166,6 +187,10 @@ namespace queen
             }
 
             Writer m_writer{};
+
+            static constexpr size_t kMaxSkipTypes = 4;
+            TypeId m_skipTypes[kMaxSkipTypes]{};
+            size_t m_skipTypeCount{0};
         };
     } // namespace detail
 

@@ -167,7 +167,7 @@ namespace
     auto t_perspective = larvae::RegisterTest("Math", "Perspective", []() {
         Mat4 projection = Perspective(Radians(90.f), 1.f, 0.1f, 100.f);
         larvae::AssertTrue(Near(projection.m_m[0][0], 1.f));
-        larvae::AssertTrue(Near(projection.m_m[1][1], -1.f));
+        larvae::AssertTrue(Near(projection.m_m[1][1], 1.f));
         larvae::AssertTrue(Near(projection.m_m[2][3], -1.f));
     });
 
