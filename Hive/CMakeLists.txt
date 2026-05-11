@@ -73,8 +73,14 @@ target_sources(Hive
 )
 
 if(WIN32)
-    target_sources(Hive PRIVATE src/hive/platform/dynamic_library_win32.cpp)
+    target_sources(Hive PRIVATE
+        src/hive/platform/dynamic_library_win32.cpp
+        src/hive/platform/process_win32.cpp
+    )
 elseif(UNIX)
-    target_sources(Hive PRIVATE src/hive/platform/dynamic_library_linux.cpp)
+    target_sources(Hive PRIVATE
+        src/hive/platform/dynamic_library_linux.cpp
+        src/hive/platform/process_linux.cpp
+    )
     target_link_libraries(Hive PRIVATE dl)
 endif()
