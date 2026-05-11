@@ -1,17 +1,17 @@
+#include <hive/core/log.h>
+#include <hive/math/functions.h>
+
 #include <swarm/platform/diligent_swarm.h>
 #include <swarm/precomp.h>
 #include <swarm/swarm.h>
 #include <swarm/swarm_log.h>
 
-#include <hive/core/log.h>
-#include <hive/math/functions.h>
-
-#include <diligent_internal.h>
-
 #include <Buffer.h>
 #include <DeviceContext.h>
 #include <GraphicsTypes.h>
 #include <MapHelper.hpp>
+#include <atomic>
+#include <diligent_internal.h>
 
 namespace swarm
 {
@@ -64,6 +64,25 @@ namespace swarm
             return false;
         }
 
+        {
+            BufferDesc descriptor;
+            descriptor.Name = "Swarm TimeConstants";
+            descriptor.Size = sizeof(TimeConstantsGpu);
+            descriptor.Usage = USAGE_DYNAMIC;
+            descriptor.BindFlags = BIND_UNIFORM_BUFFER;
+            descriptor.CPUAccessFlags = CPU_ACCESS_WRITE;
+            context->m_device->CreateBuffer(descriptor, nullptr, &context->m_timeConstantBuffer);
+        }
+        if (context->m_timeConstantBuffer == nullptr)
+        {
+            context->m_objectConstantBuffer->Release();
+            context->m_objectConstantBuffer = nullptr;
+            context->m_viewConstantBuffer->Release();
+            context->m_viewConstantBuffer = nullptr;
+            hive::LogError(LOG_SWARM, "InitSceneConstants: failed to create time constant buffer");
+            return false;
+        }
+
         for (uint32_t i = 0; i < context->m_deferredContextCount; ++i)
         {
             context->m_viewDirty[i] = true;
@@ -78,6 +97,11 @@ namespace swarm
             return;
         }
 
+        if (context->m_timeConstantBuffer != nullptr)
+        {
+            context->m_timeConstantBuffer->Release();
+            context->m_timeConstantBuffer = nullptr;
+        }
         if (context->m_objectConstantBuffer != nullptr)
         {
             context->m_objectConstantBuffer->Release();
@@ -114,6 +138,45 @@ namespace swarm
         {
             context->m_viewDirty[i] = true;
         }
+    }
+
+    void SetTime(RenderContext* context, float seconds, float deltaSeconds)
+    {
+        if (context == nullptr)
+        {
+            return;
+        }
+        context->m_timeSeconds = seconds;
+        context->m_deltaSeconds = deltaSeconds;
+        for (uint32_t i = 0; i < context->m_deferredContextCount; ++i)
+        {
+            context->m_timeDirty[i] = true;
+        }
+    }
+
+    static void FlushTimeConstantsIfDirty(RenderContext* context, uint32_t deferredIndex)
+    {
+        using namespace Diligent;
+
+        if (context == nullptr || context->m_timeConstantBuffer == nullptr ||
+            deferredIndex >= context->m_deferredContextCount)
+        {
+            return;
+        }
+        if (!context->m_timeDirty[deferredIndex])
+        {
+            return;
+        }
+
+        IDeviceContext* target = context->m_deferredContexts[deferredIndex];
+        MapHelper<TimeConstantsGpu> mapped{target, context->m_timeConstantBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
+        if (mapped == nullptr)
+        {
+            return;
+        }
+        mapped->m_timeSeconds = context->m_timeSeconds;
+        mapped->m_deltaSeconds = context->m_deltaSeconds;
+        context->m_timeDirty[deferredIndex] = false;
     }
 
     static void FlushViewConstantsIfDirty(RenderContext* context, uint32_t deferredIndex)
@@ -153,7 +216,7 @@ namespace swarm
     }
 
     void DrawMesh(RenderContext* context, uint32_t deferredIndex, const Mesh* mesh, const Material* material,
-                  const hive::math::Mat4& world)
+                  const hive::math::Mat4& world, int32_t submeshIndex)
     {
         using namespace Diligent;
 
@@ -175,12 +238,26 @@ namespace swarm
             return;
         }
 
+        // Only StaticMesh vertex layout is implemented; other domains would feed garbage to the VS.
+        if (material->m_domain != VertexDomain::STATIC_MESH)
+        {
+            static std::atomic<bool> warned{false};
+            if (!warned.exchange(true, std::memory_order_relaxed))
+            {
+                hive::LogWarning(LOG_SWARM,
+                                 "DrawMesh: material expects domain {} but only STATIC_MESH "
+                                 "is supported; draw skipped",
+                                 static_cast<int>(material->m_domain));
+            }
+            return;
+        }
+
         context->m_deferredHasWork[deferredIndex] = true;
         FlushViewConstantsIfDirty(context, deferredIndex);
+        FlushTimeConstantsIfDirty(context, deferredIndex);
 
         {
-            MapHelper<ObjectConstantsGpu> mapped{target, context->m_objectConstantBuffer,
-                                                 MAP_WRITE, MAP_FLAG_DISCARD};
+            MapHelper<ObjectConstantsGpu> mapped{target, context->m_objectConstantBuffer, MAP_WRITE, MAP_FLAG_DISCARD};
             if (mapped == nullptr)
             {
                 return;
@@ -201,7 +278,14 @@ namespace swarm
             target->CommitShaderResources(material->m_resourceBinding, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         }
 
-        for (uint32_t i = 0; i < mesh->m_submeshCount; ++i)
+        const uint32_t first = (submeshIndex < 0) ? 0u : static_cast<uint32_t>(submeshIndex);
+        const uint32_t last = (submeshIndex < 0) ? mesh->m_submeshCount : static_cast<uint32_t>(submeshIndex) + 1u;
+        if (first >= mesh->m_submeshCount)
+        {
+            return;
+        }
+
+        for (uint32_t i = first; i < last && i < mesh->m_submeshCount; ++i)
         {
             const Submesh& submesh = mesh->m_submeshes[i];
             if (submesh.m_indexCount == 0)
@@ -218,9 +302,9 @@ namespace swarm
         }
     }
 
-    void DrawMesh(RenderContext* context, const Mesh* mesh, const Material* material,
-                  const hive::math::Mat4& world)
+    void DrawMesh(RenderContext* context, const Mesh* mesh, const Material* material, const hive::math::Mat4& world,
+                  int32_t submeshIndex)
     {
-        DrawMesh(context, 0, mesh, material, world);
+        DrawMesh(context, 0, mesh, material, world, submeshIndex);
     }
 } // namespace swarm

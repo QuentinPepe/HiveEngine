@@ -7,56 +7,96 @@ namespace swarm
         return false;
     }
 
-    void ShutdownSystem() {}
+    void ShutdownSystem()
+    {
+    }
 
     RenderContext* CreateRenderContext(terra::WindowContext* /*window*/)
     {
         return nullptr;
     }
 
-    void DestroyRenderContext(RenderContext* /*renderContext*/) {}
+    void DestroyRenderContext(RenderContext* /*renderContext*/)
+    {
+    }
 
-    void BeginFrame(RenderContext* /*ctx*/) {}
-    void EndFrame(RenderContext* /*ctx*/) {}
-    void WaitForIdle(RenderContext* /*ctx*/) {}
-    void ResizeSwapchain(RenderContext* /*ctx*/, uint32_t /*width*/, uint32_t /*height*/) {}
+    void BeginFrame(RenderContext* /*ctx*/)
+    {
+    }
+    void EndFrame(RenderContext* /*ctx*/)
+    {
+    }
+    void WaitForIdle(RenderContext* /*ctx*/)
+    {
+    }
+    void ResizeSwapchain(RenderContext* /*ctx*/, uint32_t /*width*/, uint32_t /*height*/)
+    {
+    }
 
     Mesh* CreateMesh(RenderContext* /*ctx*/, const MeshDesc& /*desc*/)
     {
         return nullptr;
     }
-    void DestroyMesh(Mesh* /*mesh*/) {}
+    void DestroyMesh(Mesh* /*mesh*/)
+    {
+    }
 
-    Material* CreateStandardMaterial(RenderContext* /*ctx*/)
+    Material* CreateMaterial(RenderContext* /*ctx*/, const MaterialDesc& /*desc*/)
     {
         return nullptr;
     }
-    void DestroyMaterial(Material* /*material*/) {}
-
-    void SetView(RenderContext* /*ctx*/, const ViewParams& /*view*/) {}
-    void SetLighting(RenderContext* /*ctx*/, const LightingParams& /*lighting*/) {}
-    void DrawMesh(RenderContext* /*ctx*/, const Mesh* /*mesh*/, const Material* /*material*/,
-                  const hive::math::Mat4& /*world*/)
+    void DestroyMaterial(Material* /*material*/)
     {
     }
-    void DrawMesh(RenderContext* /*ctx*/, uint32_t /*workerIndex*/, const Mesh* /*mesh*/,
-                  const Material* /*material*/, const hive::math::Mat4& /*world*/)
+
+    void AddShaderSearchPath(RenderContext* /*ctx*/, const char* /*directory*/)
+    {
+    }
+    void RequestShaderReload(RenderContext* /*ctx*/)
+    {
+    }
+    bool FlushShaderCache(RenderContext* /*ctx*/)
+    {
+        return false;
+    }
+
+    void SetView(RenderContext* /*ctx*/, const ViewParams& /*view*/)
+    {
+    }
+    void SetLighting(RenderContext* /*ctx*/, const LightingParams& /*lighting*/)
+    {
+    }
+    void SetTime(RenderContext* /*ctx*/, float /*seconds*/, float /*deltaSeconds*/)
+    {
+    }
+    void DrawMesh(RenderContext* /*ctx*/, const Mesh* /*mesh*/, const Material* /*material*/,
+                  const hive::math::Mat4& /*world*/, int32_t /*submeshIndex*/)
+    {
+    }
+    void DrawMesh(RenderContext* /*ctx*/, uint32_t /*workerIndex*/, const Mesh* /*mesh*/, const Material* /*material*/,
+                  const hive::math::Mat4& /*world*/, int32_t /*submeshIndex*/)
     {
     }
     uint32_t GetDeferredContextCount(const RenderContext* /*ctx*/)
     {
         return 0;
     }
-    void PrepareWorkerFrame(RenderContext* /*ctx*/, uint32_t /*workerIndex*/) {}
+    void PrepareWorkerFrame(RenderContext* /*ctx*/, uint32_t /*workerIndex*/)
+    {
+    }
 
     ViewportRT* CreateViewportRT(RenderContext* /*ctx*/, uint32_t /*width*/, uint32_t /*height*/)
     {
         return nullptr;
     }
 
-    void DestroyViewportRT(ViewportRT* /*rt*/) {}
+    void DestroyViewportRT(ViewportRT* /*rt*/)
+    {
+    }
 
-    void ResizeViewportRT(ViewportRT* /*rt*/, uint32_t /*width*/, uint32_t /*height*/) {}
+    void ResizeViewportRT(ViewportRT* /*rt*/, uint32_t /*width*/, uint32_t /*height*/)
+    {
+    }
 
     uint32_t GetViewportRTWidth(const ViewportRT* /*rt*/)
     {
@@ -73,6 +113,10 @@ namespace swarm
         return nullptr;
     }
 
-    void BeginViewportRT(RenderContext* /*ctx*/, ViewportRT* /*rt*/) {}
-    void EndViewportRT(RenderContext* /*ctx*/, ViewportRT* /*rt*/) {}
+    void BeginViewportRT(RenderContext* /*ctx*/, ViewportRT* /*rt*/)
+    {
+    }
+    void EndViewportRT(RenderContext* /*ctx*/, ViewportRT* /*rt*/)
+    {
+    }
 } // namespace swarm

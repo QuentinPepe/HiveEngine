@@ -45,6 +45,12 @@ namespace nectar
         return m_currentAsset;
     }
 
+    wax::StringView ImportContext::SourcePath() const
+    {
+        const auto* record = m_db->FindByUuid(m_currentAsset);
+        return record != nullptr ? record->m_path.View() : wax::StringView{};
+    }
+
     void ImportContext::DeclareDep(AssetId dep, DepKind kind)
     {
         if (!dep.IsValid())

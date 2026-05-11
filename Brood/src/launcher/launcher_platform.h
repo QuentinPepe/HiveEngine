@@ -17,8 +17,9 @@
 namespace brood::launcher
 {
 
-#if HIVE_MODE_EDITOR
     std::filesystem::path GetCurrentExecutablePath();
+
+#if HIVE_MODE_EDITOR
     bool IsEngineRoot(const std::filesystem::path& path);
     wax::String GetEnvironmentValue(const char* name);
     std::filesystem::path FindEngineRoot();

@@ -1,13 +1,16 @@
 #pragma once
 
+#include <hive/math/types.h>
+
 #include <swarm/platform/diligent_swarm.h>
 #include <swarm/swarm.h>
 
-#include <hive/math/types.h>
-
 #include <Buffer.h>
 #include <PipelineState.h>
+#include <Sampler.h>
 #include <ShaderResourceBinding.h>
+#include <Texture.h>
+#include <TextureView.h>
 
 namespace swarm
 {
@@ -25,6 +28,14 @@ namespace swarm
     {
         Diligent::IPipelineState* m_pipelineState{nullptr};
         Diligent::IShaderResourceBinding* m_resourceBinding{nullptr};
+        Diligent::IBuffer* m_materialParamsBuffer{nullptr};
+        VertexDomain m_domain{VertexDomain::STATIC_MESH};
+    };
+
+    struct Texture
+    {
+        Diligent::ITexture* m_texture{nullptr};
+        Diligent::ITextureView* m_shaderView{nullptr};
     };
 
     // GPU-side layouts. Must match the HLSL cbuffers in diligent_material.cpp.
@@ -46,6 +57,14 @@ namespace swarm
         hive::math::Mat4 m_worldInvTranspose;
     };
     static_assert(sizeof(ObjectConstantsGpu) == 128, "ObjectConstantsGpu must be 128 bytes");
+
+    struct TimeConstantsGpu
+    {
+        float m_timeSeconds{0.f};
+        float m_deltaSeconds{0.f};
+        float m_padding[2]{};
+    };
+    static_assert(sizeof(TimeConstantsGpu) == 16, "TimeConstantsGpu must be 16 bytes");
 
     bool InitSceneConstants(RenderContext* context);
     void ShutdownSceneConstants(RenderContext* context);

@@ -1,33 +1,58 @@
 #pragma once
 
+#include <QString>
 #include <QWidget>
 
 #include <filesystem>
 #include <functional>
-#include <map>
 #include <memory>
+#include <vector>
 
 namespace forge
 {
     class EditorUndoManager;
 
-    struct MatFields
+    enum class MaterialParamKind
     {
-        QString shader{"standard_pbr"};
-        QString blend{"alpha_test"};
-        bool doubleSided{false};
-        float alphaCutoff{0.5f};
-        float baseColor[4]{1.f, 1.f, 1.f, 1.f};
-        float metallic{1.f};
-        float roughness{1.f};
-        std::map<QString, QString> textures;
+        Float,
+        Float2,
+        Float3,
+        Float4,
+        Color3,
+        Color4,
+        Range,
+    };
+
+    struct MaterialParamAnnotation
+    {
+        QString name;
+        MaterialParamKind kind{MaterialParamKind::Float};
+        float minValue{0.f};
+        float maxValue{1.f};
+        std::vector<float> defaults;
+    };
+
+    struct MaterialTextureAnnotation
+    {
         QString name;
     };
 
-    [[nodiscard]] MatFields ParseMatFile(const std::filesystem::path& path);
+    struct MaterialFeatureAnnotation
+    {
+        QString name;
+        bool defaultValue{false};
+    };
+
+    struct MaterialSchema
+    {
+        QString shaderPath;
+        bool shaderResolved{false};
+        std::vector<MaterialParamAnnotation> params;
+        std::vector<MaterialTextureAnnotation> textures;
+        std::vector<MaterialFeatureAnnotation> features;
+    };
 
     static constexpr int MATERIAL_THUMB_SIZE = 48;
-    [[nodiscard]] bool WriteMatFile(const std::filesystem::path& path, const MatFields& mat);
 
     class MaterialInspector : public QWidget
     {
@@ -44,9 +69,10 @@ namespace forge
         void materialModified();
         void browseToAsset(const QString& path);
 
+    public:
+        struct State;
+
     private:
-        std::shared_ptr<MatFields> m_matState;
-        std::shared_ptr<std::filesystem::path> m_matPath;
-        std::function<void()> m_saveMat;
+        std::shared_ptr<State> m_state;
     };
 } // namespace forge

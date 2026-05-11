@@ -29,6 +29,10 @@ namespace waggle
         bool m_autoRenderer{true};
         bool m_autoSystems{true};
         bool m_deferWindow{false};
+        // When true, Swarm commands run on a dedicated render thread while the game thread
+        // prepares frame N+1 in parallel. Off by default until the path is validated against
+        // every host (editor Qt loop, headless tools, single-frame benches).
+        bool m_useRenderThread{false};
         AppConfig m_app{};
         drone::JobSubmitter m_jobs{};
     };

@@ -153,12 +153,9 @@ namespace nectar
             if (trimmed.Equals("false"))
                 return HiveValue::MakeBool(false);
 
-            // String array: [...]
+            // Array: [...] — strings if first element is quoted, floats if numeric
             if (trimmed[0] == '[')
             {
-                auto v = HiveValue::MakeStringArray(alloc);
-
-                // Find matching ']'
                 size_t end = trimmed.Size();
                 if (end < 2 || trimmed[end - 1] != ']')
                 {
@@ -168,13 +165,48 @@ namespace nectar
 
                 auto inner = TrimWhitespace(trimmed.Substr(1, end - 2));
                 if (inner.IsEmpty())
-                    return v; // empty array []
+                    return HiveValue::MakeStringArray(alloc);
 
-                // Parse comma-separated quoted strings
+                const bool isFloatArray = IsDigitOrSign(inner[0]) || inner[0] == '.';
+                if (isFloatArray)
+                {
+                    auto v = HiveValue::MakeFloatArray(alloc);
+                    size_t pos = 0;
+                    while (pos < inner.Size())
+                    {
+                        while (pos < inner.Size() && (inner[pos] == ' ' || inner[pos] == '\t' || inner[pos] == ','))
+                            ++pos;
+                        if (pos >= inner.Size())
+                            break;
+
+                        size_t elemStart = pos;
+                        while (pos < inner.Size() && inner[pos] != ',' && inner[pos] != ' ' && inner[pos] != '\t')
+                            ++pos;
+                        wax::StringView elemView = inner.Substr(elemStart, pos - elemStart);
+
+                        double floatVal{};
+                        int64_t intVal{};
+                        if (TryParseFloat(elemView, floatVal))
+                        {
+                            v.PushFloat(floatVal);
+                        }
+                        else if (TryParseInt(elemView, intVal))
+                        {
+                            v.PushFloat(static_cast<double>(intVal));
+                        }
+                        else
+                        {
+                            ok = false;
+                            return HiveValue{};
+                        }
+                    }
+                    return v;
+                }
+
+                auto v = HiveValue::MakeStringArray(alloc);
                 size_t pos = 0;
                 while (pos < inner.Size())
                 {
-                    // Skip whitespace and commas
                     while (pos < inner.Size() && (inner[pos] == ' ' || inner[pos] == '\t' || inner[pos] == ','))
                         ++pos;
                     if (pos >= inner.Size())

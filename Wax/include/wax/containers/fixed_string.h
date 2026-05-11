@@ -22,7 +22,7 @@ namespace wax
         using ConstIterator = const char*;
 
         static constexpr size_t npos = static_cast<size_t>(-1);
-        static constexpr size_t MaxCapacity = 22;
+        static constexpr size_t MaxCapacity = 62;
 
         constexpr FixedString() noexcept
             : buffer_{}

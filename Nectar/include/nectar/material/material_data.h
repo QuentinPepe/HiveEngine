@@ -1,36 +1,28 @@
 #pragma once
 
+#include <comb/default_allocator.h>
+
+#include <wax/containers/hash_map.h>
 #include <wax/containers/string.h>
 
 #include <nectar/core/asset_id.h>
-
-#include <cstdint>
+#include <nectar/hive/hive_value.h>
 
 namespace nectar
 {
     struct MaterialData
     {
-        wax::String m_name;
-        wax::String m_shader{"standard_pbr"};
-
-        float m_baseColorFactor[4]{1.f, 1.f, 1.f, 1.f};
-        float m_metallicFactor{1.f};
-        float m_roughnessFactor{1.f};
-        float m_alphaCutoff{0.5f};
-        bool m_doubleSided{false};
-
-        AssetId m_albedoTexture;
-        AssetId m_normalTexture;
-        AssetId m_metallicRoughnessTexture;
-        AssetId m_emissiveTexture;
-        AssetId m_aoTexture;
-
-        enum class BlendMode : uint8_t
+        explicit MaterialData(comb::DefaultAllocator& alloc)
+            : m_shaderPath{alloc}
+            , m_paramOverrides{alloc, 8}
+            , m_textureBindings{alloc, 8}
+            , m_featureOverrides{alloc, 4}
         {
-            BLEND_OPAQUE,
-            ALPHA_TEST,
-            ALPHA_BLEND
-        };
-        BlendMode m_blendMode{BlendMode::BLEND_OPAQUE};
+        }
+
+        wax::String m_shaderPath;
+        wax::HashMap<wax::String, HiveValue> m_paramOverrides;
+        wax::HashMap<wax::String, AssetId> m_textureBindings;
+        wax::HashMap<wax::String, bool> m_featureOverrides;
     };
 } // namespace nectar

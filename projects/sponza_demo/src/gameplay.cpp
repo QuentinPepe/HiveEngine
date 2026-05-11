@@ -1,10 +1,13 @@
+#include <hive/core/env.h>
 #include <hive/core/log.h>
+#include <hive/math/transforms.h>
 #include <hive/project/gameplay_api.h>
 
 #include <comb/default_allocator.h>
 
 #include <wax/containers/string.h>
 #include <wax/containers/string_view.h>
+#include <wax/containers/vector.h>
 
 #include <queen/query/query_term.h>
 #include <queen/world/world.h>
@@ -15,10 +18,11 @@
 #include <nectar/hive/hive_writer.h>
 #include <nectar/vfs/virtual_filesystem.h>
 
-#include <propolis/macros/blueprint_function.h>
-#include <propolis/runtime/function_registry.h>
-
 #include <waggle/app_context.h>
+#include <waggle/components/editor_only.h>
+#include <waggle/components/mesh_reference.h>
+#include <waggle/components/name.h>
+#include <waggle/components/transform.h>
 #include <waggle/project/project_context.h>
 #include <waggle/project/project_manager.h>
 #include <waggle/runtime_context.h>
@@ -27,6 +31,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <propolis/macros/blueprint_function.h>
+#include <propolis/runtime/function_registry.h>
+#include <utility>
 
 namespace
 {
@@ -248,6 +256,122 @@ namespace
             });
     }
 
+    struct SponzaGridConfig
+    {
+        uint32_t m_size{0};
+        bool m_spawned{false};
+    };
+
+    void SpawnGridFromExistingMeshes(queen::World& world, const SponzaGridConfig& config)
+    {
+        struct DrawSnapshot
+        {
+            waggle::MeshReference m_meshRef;
+            waggle::Transform m_transform;
+        };
+        wax::Vector<DrawSnapshot> snapshots{GetGameplayAllocator()};
+        hive::math::Float3 boundsMin{0.f, 0.f, 0.f};
+        hive::math::Float3 boundsMax{0.f, 0.f, 0.f};
+        bool boundsValid = false;
+        world.ForEachArchetype([&](auto& archetype) {
+            if (!archetype.template HasComponent<waggle::MeshReference>() ||
+                !archetype.template HasComponent<waggle::Transform>())
+            {
+                return;
+            }
+            for (uint32_t row = 0; row < archetype.EntityCount(); ++row)
+            {
+                const queen::Entity entity = archetype.GetEntity(row);
+                if (world.Has<waggle::EditorOnly>(entity))
+                {
+                    continue;
+                }
+                const auto* meshRef = world.Get<waggle::MeshReference>(entity);
+                const auto* transform = world.Get<waggle::Transform>(entity);
+                if (meshRef == nullptr || transform == nullptr)
+                {
+                    continue;
+                }
+                snapshots.PushBack({*meshRef, *transform});
+                if (!boundsValid)
+                {
+                    boundsMin = transform->m_position;
+                    boundsMax = transform->m_position;
+                    boundsValid = true;
+                }
+                else
+                {
+                    boundsMin.m_x = (std::min)(boundsMin.m_x, transform->m_position.m_x);
+                    boundsMin.m_y = (std::min)(boundsMin.m_y, transform->m_position.m_y);
+                    boundsMin.m_z = (std::min)(boundsMin.m_z, transform->m_position.m_z);
+                    boundsMax.m_x = (std::max)(boundsMax.m_x, transform->m_position.m_x);
+                    boundsMax.m_y = (std::max)(boundsMax.m_y, transform->m_position.m_y);
+                    boundsMax.m_z = (std::max)(boundsMax.m_z, transform->m_position.m_z);
+                }
+            }
+        });
+
+        if (snapshots.IsEmpty())
+        {
+            return;
+        }
+
+        // Derive spacing from the scene's footprint so duplicates don't intersect the
+        // original — Sponza is several thousand units wide, a hardcoded spacing breaks
+        // for any non-toy scene. Adds 20% slack so neighbours don't kiss.
+        const float spanX = boundsMax.m_x - boundsMin.m_x;
+        const float spanZ = boundsMax.m_z - boundsMin.m_z;
+        const float footprint = (std::max)(spanX, spanZ);
+        const float spacing = (std::max)(footprint * 1.2f, 100.f);
+
+        const int32_t half = static_cast<int32_t>(config.m_size) / 2;
+        uint32_t spawned = 0;
+        for (int32_t gx = -half; gx <= half; ++gx)
+        {
+            for (int32_t gz = -half; gz <= half; ++gz)
+            {
+                if (gx == 0 && gz == 0)
+                {
+                    continue;
+                }
+                const hive::math::Float3 offset{static_cast<float>(gx) * spacing, 0.f,
+                                                static_cast<float>(gz) * spacing};
+                for (const DrawSnapshot& snap : snapshots)
+                {
+                    waggle::Transform transform = snap.m_transform;
+                    transform.m_position = transform.m_position + offset;
+                    const hive::math::Mat4 worldMatrix =
+                        hive::math::TRS(transform.m_position, transform.m_rotation, transform.m_scale);
+                    waggle::MeshReference meshRef = snap.m_meshRef;
+                    (void)world.Spawn(waggle::Name{wax::FixedString{"grid_instance"}}, std::move(transform),
+                                      waggle::WorldMatrix{worldMatrix}, waggle::TransformVersion{}, std::move(meshRef));
+                    ++spawned;
+                }
+            }
+        }
+        hive::LogInfo(LOG_SPONZA, "Spawned bench grid: {}x{} spacing={} (+{} entities)", config.m_size, config.m_size,
+                      spacing, spawned);
+    }
+
+    void RegisterGridSpawnSystem(queen::World& world)
+    {
+        world.System("SponzaDemo.SpawnGrid").Run([](queen::World& w) {
+            SponzaGridConfig* config = w.Resource<SponzaGridConfig>();
+            if (config == nullptr || config->m_spawned || config->m_size <= 1)
+            {
+                return;
+            }
+            bool hasMesh = false;
+            w.Query<queen::Read<waggle::MeshReference>>().Each([&](const waggle::MeshReference&) { hasMesh = true; });
+            if (!hasMesh)
+            {
+                return;
+            }
+            SpawnGridFromExistingMeshes(w, *config);
+            config->m_spawned = true;
+        });
+    }
+
     void RegisterFinalizeSystem(queen::World& world)
     {
         world.System("SponzaDemo.Finalize").After("SponzaDemo.Step").Run([](queen::World& runtimeWorld) {
@@ -280,10 +404,7 @@ namespace
     }
 } // namespace
 
-HIVE_BLUEPRINT_FUNCTION_3(SmoothDamp, "Math", float,
-    float, current,
-    float, target,
-    float, smoothing)
+HIVE_BLUEPRINT_FUNCTION_3(SmoothDamp, "Math", float, float, current, float, target, float, smoothing)
 {
     return current + (target - current) * smoothing;
 }
@@ -293,6 +414,17 @@ HIVE_GAMEPLAY_EXPORT void HiveGameplayRegister(queen::World& world)
     InitGameplayAllocator();
 
     propolis::RegisterAllBlueprintFunctions(world);
+
+    char gridEnv[16]{};
+    if (hive::core::ReadEnvVar("HIVE_SPONZA_GRID", gridEnv, sizeof(gridEnv)))
+    {
+        const int parsed = std::atoi(gridEnv);
+        if (parsed > 1)
+        {
+            world.InsertResource(SponzaGridConfig{static_cast<uint32_t>(parsed), false});
+            RegisterGridSpawnSystem(world);
+        }
+    }
 
     const waggle::RuntimeContext* runtime = world.Resource<waggle::RuntimeContext>();
     if (runtime == nullptr)
@@ -346,4 +478,3 @@ HIVE_GAMEPLAY_EXPORT const char* HiveGameplayVersion()
 {
     return "0.2.0";
 }
-

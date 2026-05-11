@@ -1,7 +1,5 @@
 #include <hive/core/log.h>
 
-#include <propolis/runtime/function_registry.h>
-
 #include <queen/reflect/component_registry.h>
 #include <queen/world/world.h>
 
@@ -25,11 +23,11 @@
 #include <forge/project_hub.h>
 #include <forge/selection.h>
 #include <forge/toolbar.h>
-
 #include <forge/vulkan_viewport_widget.h>
 
 #include <QCloseEvent>
 #include <QDockWidget>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -39,8 +37,6 @@
 #include <QPainterPath>
 #include <QPixmap>
 #include <QPropertyAnimation>
-#include <QCloseEvent>
-#include <QFileInfo>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
@@ -50,14 +46,14 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <propolis/runtime/function_registry.h>
 #include <vector>
 
 static const hive::LogCategory LOG_FORGE{"Forge"};
 
 namespace
 {
-    std::string ResolveMeshVfsPath(const std::filesystem::path& meshPath,
-                                   const std::filesystem::path& assetsRoot,
+    std::string ResolveMeshVfsPath(const std::filesystem::path& meshPath, const std::filesystem::path& assetsRoot,
                                    const std::string& fallbackName)
     {
         if (assetsRoot.empty())
@@ -108,9 +104,15 @@ namespace
             ref.m_meshIndex = submeshIndex;
             ref.m_indexCount = submesh->m_indexCount;
             ref.m_materialIndex = submesh->m_materialIndex;
-            char matName[32];
-            std::snprintf(matName, sizeof(matName), "Material_%d", submesh->m_materialIndex);
-            ref.m_materialName = wax::FixedString{matName};
+            const std::filesystem::path meshFsPath{meshVfsPath};
+            const auto modelDir = meshFsPath.parent_path().generic_string();
+            if (!modelDir.empty() && submesh->m_materialIndex >= 0)
+            {
+                char hmatPath[wax::FixedString::MaxCapacity + 1];
+                std::snprintf(hmatPath, sizeof(hmatPath), "%s/Material_%d.hmat", modelDir.c_str(),
+                              submesh->m_materialIndex);
+                ref.m_material = wax::FixedString{hmatPath};
+            }
         }
         else
         {
@@ -714,15 +716,13 @@ namespace forge
         m_blueprintOutline->SetEditor(editor);
         m_blueprintInspector->SetEditor(editor);
 
-        disconnect(editor, &BlueprintEditor::nodeSelected,
-                   m_blueprintInspector, &BlueprintNodeInspector::InspectNode);
-        disconnect(editor, &BlueprintEditor::selectionCleared,
-                   m_blueprintInspector, &BlueprintNodeInspector::ShowGraphProperties);
+        disconnect(editor, &BlueprintEditor::nodeSelected, m_blueprintInspector, &BlueprintNodeInspector::InspectNode);
+        disconnect(editor, &BlueprintEditor::selectionCleared, m_blueprintInspector,
+                   &BlueprintNodeInspector::ShowGraphProperties);
 
-        connect(editor, &BlueprintEditor::nodeSelected,
-                m_blueprintInspector, &BlueprintNodeInspector::InspectNode);
-        connect(editor, &BlueprintEditor::selectionCleared,
-                m_blueprintInspector, &BlueprintNodeInspector::ShowGraphProperties);
+        connect(editor, &BlueprintEditor::nodeSelected, m_blueprintInspector, &BlueprintNodeInspector::InspectNode);
+        connect(editor, &BlueprintEditor::selectionCleared, m_blueprintInspector,
+                &BlueprintNodeInspector::ShowGraphProperties);
 
         m_leftStack->setCurrentIndex(1);
         m_rightStack->setCurrentIndex(1);
@@ -835,8 +835,7 @@ namespace forge
             {
                 return;
             }
-            QString base = panel->FilePath().isEmpty() ? "Untitled" :
-                QFileInfo{panel->FilePath()}.baseName();
+            QString base = panel->FilePath().isEmpty() ? "Untitled" : QFileInfo{panel->FilePath()}.baseName();
             m_centralTabs->setTabText(idx, dirty ? base + " *" : base);
         });
     }

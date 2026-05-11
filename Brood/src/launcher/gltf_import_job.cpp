@@ -2,6 +2,9 @@
 
 #include <comb/default_allocator.h>
 
+#include <wax/containers/string.h>
+#include <wax/containers/vector.h>
+
 #include <nectar/core/content_hash.h>
 #include <nectar/database/asset_database.h>
 #include <nectar/database/asset_record.h>
@@ -12,9 +15,6 @@
 #include <nectar/mesh/gltf_material.h>
 #include <nectar/pipeline/import_pipeline.h>
 #include <nectar/registry/hiveid_file.h>
-
-#include <wax/containers/string.h>
-#include <wax/containers/vector.h>
 
 #include <algorithm>
 #include <cctype>
@@ -123,7 +123,8 @@ namespace nectar
                 continue;
 
             auto extStd = entry.path().extension().string();
-            std::transform(extStd.begin(), extStd.end(), extStd.begin(), [](unsigned char c) { return std::tolower(c); });
+            std::transform(extStd.begin(), extStd.end(), extStd.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
 
             if (!IsTextureExtension(wax::StringView{extStd.c_str()}))
                 continue;
@@ -158,7 +159,7 @@ namespace nectar
                 ImportRequest req;
                 req.m_sourcePath = wax::StringView{relativePath.c_str()};
                 req.m_assetId = assetId;
-                pipeline->ImportAsset(req);
+                (void)pipeline->ImportAsset(req);
             }
 
             ++result.m_textureCount;
@@ -231,7 +232,7 @@ namespace nectar
                         ImportRequest req;
                         req.m_sourcePath = wax::StringView{meshRelative.c_str()};
                         req.m_assetId = meshAssetId;
-                        pipeline->ImportAsset(req);
+                        (void)pipeline->ImportAsset(req);
                     }
 
                     hive::LogInfo(LOG_IMPORT, "Wrote mesh: {}", nmshPath.generic_string());
@@ -254,22 +255,36 @@ namespace nectar
         {
             const auto& src = materials[mi];
 
-            MaterialData matData{};
-            matData.m_name = src.m_name;
-            std::memcpy(matData.m_baseColorFactor, src.m_baseColorFactor, sizeof(matData.m_baseColorFactor));
-            matData.m_metallicFactor = src.m_metallicFactor;
-            matData.m_roughnessFactor = src.m_roughnessFactor;
-            matData.m_doubleSided = src.m_doubleSided;
+            MaterialData matData{alloc};
+            matData.m_shaderPath = wax::String{alloc, wax::StringView{"engine/standard.hshader"}};
 
-            matData.m_albedoTexture = LookupTextureGuid(src.m_baseColorTexture, modelDir, assetsDir, alloc);
-            matData.m_normalTexture = LookupTextureGuid(src.m_normalTexture, modelDir, assetsDir, alloc);
-            matData.m_metallicRoughnessTexture =
-                LookupTextureGuid(src.m_metallicRoughnessTexture, modelDir, assetsDir, alloc);
+            HiveValue baseColor = HiveValue::MakeFloatArray(alloc);
+            for (size_t i = 0; i < 4; ++i)
+                baseColor.PushFloat(static_cast<double>(src.m_baseColorFactor[i]));
+            matData.m_paramOverrides.Insert(wax::String{alloc, wax::StringView{"base_color_factor"}},
+                                            static_cast<HiveValue&&>(baseColor));
+            matData.m_paramOverrides.Insert(wax::String{alloc, wax::StringView{"metallic_factor"}},
+                                            HiveValue::MakeFloat(static_cast<double>(src.m_metallicFactor)));
+            matData.m_paramOverrides.Insert(wax::String{alloc, wax::StringView{"roughness_factor"}},
+                                            HiveValue::MakeFloat(static_cast<double>(src.m_roughnessFactor)));
 
+            const AssetId albedoId = LookupTextureGuid(src.m_baseColorTexture, modelDir, assetsDir, alloc);
+            if (albedoId.IsValid())
+                matData.m_textureBindings.Insert(wax::String{alloc, wax::StringView{"albedo_map"}}, albedoId);
+            const AssetId normalId = LookupTextureGuid(src.m_normalTexture, modelDir, assetsDir, alloc);
+            if (normalId.IsValid())
+                matData.m_textureBindings.Insert(wax::String{alloc, wax::StringView{"normal_map"}}, normalId);
+            const AssetId mrId = LookupTextureGuid(src.m_metallicRoughnessTexture, modelDir, assetsDir, alloc);
+            if (mrId.IsValid())
+                matData.m_textureBindings.Insert(wax::String{alloc, wax::StringView{"metallic_roughness_map"}}, mrId);
+
+            if (src.m_doubleSided)
+                matData.m_featureOverrides.Insert(wax::String{alloc, wax::StringView{"double_sided"}}, true);
             if (src.m_alphaCutoff > 0.f)
             {
-                matData.m_alphaCutoff = src.m_alphaCutoff;
-                matData.m_blendMode = MaterialData::BlendMode::ALPHA_TEST;
+                matData.m_featureOverrides.Insert(wax::String{alloc, wax::StringView{"alpha_test"}}, true);
+                matData.m_paramOverrides.Insert(wax::String{alloc, wax::StringView{"alpha_cutoff"}},
+                                                HiveValue::MakeFloat(static_cast<double>(src.m_alphaCutoff)));
             }
 
             wax::String matName = src.m_name.IsEmpty() ? [&] {
@@ -315,7 +330,7 @@ namespace nectar
                 ImportRequest req;
                 req.m_sourcePath = wax::StringView{relativePath.c_str()};
                 req.m_assetId = assetId;
-                pipeline->ImportAsset(req);
+                (void)pipeline->ImportAsset(req);
             }
 
             ++result.m_materialCount;

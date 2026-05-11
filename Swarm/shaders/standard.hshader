@@ -1,0 +1,41 @@
+[shader]
+name = "Standard"
+vertex = "standard.vs.hlsl"
+pixel = "standard.ps.hlsl"
+domain = "StaticMesh"
+shading_model = "Lit"
+
+[render_state]
+cull = "Back"
+blend = "Opaque"
+depth_test = true
+depth_write = true
+
+[parameters.base_color_factor]
+ui = "color"
+default = [1.0, 1.0, 1.0, 1.0]
+
+[parameters.metallic_factor]
+ui = "range"
+min = 0.0
+max = 1.0
+default = 0.0
+
+[parameters.roughness_factor]
+ui = "range"
+min = 0.0
+max = 1.0
+default = 1.0
+
+[parameters.emissive_factor]
+ui = "color"
+default = [0.0, 0.0, 0.0]
+
+[textures.albedo_map]
+default = ""
+
+[textures.normal_map]
+default = ""
+
+[textures.metallic_roughness_map]
+default = ""

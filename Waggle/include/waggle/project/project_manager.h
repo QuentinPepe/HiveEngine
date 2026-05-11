@@ -4,10 +4,12 @@
 
 #include <wax/containers/string_view.h>
 #include <wax/pointers/box.h>
+#include <wax/serialization/byte_buffer.h>
 
 #include <drone/job_submitter.h>
 #include <drone/service_thread.h>
 
+#include <nectar/core/asset_id.h>
 #include <nectar/project/project_file.h>
 #include <nectar/watcher/file_watcher.h>
 
@@ -71,7 +73,15 @@ namespace waggle
         void SaveImportCache();
         void Update();
 
+        void MountEngineAssets(wax::StringView absoluteDir, wax::StringView vfsPrefix);
+
         [[nodiscard]] uint32_t LastReloadCount() const noexcept;
+
+        [[nodiscard]] bool ConsumeShaderReloadRequest() noexcept;
+
+        void ConsumeChangedMaterials(wax::Vector<wax::String>& out);
+
+        [[nodiscard]] wax::ByteBuffer ReadCookedBlob(nectar::AssetId id);
 
     private:
         comb::DefaultAllocator* m_alloc;
@@ -84,6 +94,7 @@ namespace waggle
         wax::Box<nectar::VirtualFilesystem> m_vfs;
         wax::Box<nectar::DiskMountSource> m_assetsMount;
         wax::Box<nectar::DiskMountSource> m_casMount;
+        wax::Box<nectar::DiskMountSource> m_engineMount;
         wax::Box<nectar::CasStore> m_cas;
         wax::Box<nectar::IOScheduler> m_io;
         wax::Box<nectar::AssetServer> m_server;
@@ -100,5 +111,7 @@ namespace waggle
         wax::Vector<nectar::FileChange> m_offlineChanges;
         wax::String m_watcherStatePath;
         uint32_t m_lastReloadCount{0};
+        bool m_shaderReloadRequested{false};
+        wax::Vector<wax::String> m_changedMaterials;
     };
 } // namespace waggle

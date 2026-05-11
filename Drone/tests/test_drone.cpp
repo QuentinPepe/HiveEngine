@@ -4,7 +4,10 @@
 
 #include <drone/counter.h>
 #include <drone/job_system.h>
+#include <drone/signal.h>
 #include <drone/task.h>
+
+#include <thread>
 
 #include <larvae/larvae.h>
 
@@ -253,6 +256,35 @@ namespace
 
         counter.Wait();
         larvae::AssertEqual(arc->load(), kJobs);
+    });
+
+    auto t17 = larvae::RegisterTest("DroneSignal", "InitialNotSet", []() {
+        drone::Signal signal;
+        larvae::AssertFalse(signal.IsSet());
+    });
+
+    auto t18 = larvae::RegisterTest("DroneSignal", "SetThenWaitReturns", []() {
+        drone::Signal signal;
+        signal.Set();
+        signal.Wait();
+        larvae::AssertTrue(signal.IsSet());
+        signal.Reset();
+        larvae::AssertFalse(signal.IsSet());
+    });
+
+    auto t19 = larvae::RegisterTest("DroneSignal", "CrossThreadWakeup", []() {
+        drone::Signal signal;
+        std::atomic<bool> waited{false};
+        std::thread waiter{[&] {
+            signal.WaitAndReset();
+            waited.store(true);
+        }};
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        larvae::AssertFalse(waited.load());
+        signal.Set();
+        waiter.join();
+        larvae::AssertTrue(waited.load());
+        larvae::AssertFalse(signal.IsSet());
     });
 
 } // namespace

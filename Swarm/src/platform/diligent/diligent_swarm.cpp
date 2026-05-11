@@ -1,23 +1,32 @@
-#include <swarm/platform/diligent_swarm.h>
-
+#include <hive/core/env.h>
 #include <hive/core/log.h>
 
+#include <swarm/platform/diligent_swarm.h>
 #include <swarm/precomp.h>
 #include <swarm/swarm.h>
 #include <swarm/swarm_log.h>
+#include <swarm/swarmmodule.h>
 
-#include <diligent_internal.h>
+#include <hive/platform/process.h>
 
 #include <EngineFactoryVk.h>
 #include <RefCntAutoPtr.hpp>
-
-#include <swarm/swarmmodule.h>
+#include <diligent_internal.h>
+#include <diligent_shader_library.h>
+#include <filesystem>
 namespace swarm
 {
     namespace
     {
         void ShutdownRenderContext(RenderContext& renderContext)
         {
+            if (renderContext.m_shaderLibrary != nullptr)
+            {
+                auto& allocator = SwarmModule::GetInstance().GetAllocator();
+                comb::Delete(allocator, renderContext.m_shaderLibrary);
+                renderContext.m_shaderLibrary = nullptr;
+            }
+
             ShutdownSceneConstants(&renderContext);
 
             if (renderContext.m_swapchain != nullptr)
@@ -46,7 +55,7 @@ namespace swarm
                 renderContext.m_device->Release();
             }
         }
-    }
+    } // namespace
 
     const hive::LogCategory LOG_DILIGENT{"Diligent", &LOG_SWARM};
 
@@ -80,7 +89,6 @@ namespace swarm
     {
     }
 
-
     bool InitRenderContext(RenderContext* renderContext, terra::WindowContext* window);
     RenderContext* CreateRenderContext(terra::WindowContext* windowContext)
     {
@@ -91,6 +99,74 @@ namespace swarm
         {
             comb::Delete(allocator, context);
             return nullptr;
+        }
+
+        context->m_shaderLibrary = comb::New<ShaderLibrary>(allocator);
+        if (!context->m_shaderLibrary->Initialize(context->m_device))
+        {
+            hive::LogError(LOG_SWARM, "CreateRenderContext: ShaderLibrary init failed");
+            ShutdownRenderContext(*context);
+            comb::Delete(allocator, context);
+            return nullptr;
+        }
+
+        // Engine shaders are staged next to the running executable. Project paths get
+        // added later via swarm::AddShaderSearchPath. The PSO cache lands in
+        // HIVE_SHADER_CACHE when set, else in the OS user cache dir.
+        {
+            std::filesystem::path executableDir;
+            char overrideBuf[1024]{};
+            if (hive::core::ReadEnvVar("HIVE_SWARM_MODULE_DIR", overrideBuf, sizeof(overrideBuf)))
+            {
+                executableDir = overrideBuf;
+            }
+            else
+            {
+                char buf[4096]{};
+                if (hive::GetExecutablePath(buf, sizeof(buf)))
+                {
+                    executableDir = std::filesystem::path{buf}.parent_path();
+                }
+                if (executableDir.empty())
+                {
+                    executableDir = std::filesystem::current_path();
+                }
+            }
+            const auto engineShaderDir = executableDir / "shaders" / "engine";
+            context->m_shaderLibrary->AddSearchPath(engineShaderDir.string().c_str());
+
+            char cacheOverride[1024]{};
+            std::filesystem::path cachePath;
+            if (hive::core::ReadEnvVar("HIVE_SHADER_CACHE", cacheOverride, sizeof(cacheOverride)))
+            {
+                cachePath = cacheOverride;
+            }
+            else
+            {
+                char localAppData[1024]{};
+                if (hive::core::ReadEnvVar("LOCALAPPDATA", localAppData, sizeof(localAppData)) &&
+                    localAppData[0] != '\0')
+                {
+                    cachePath = std::filesystem::path{localAppData} / "HiveEngine" / "shader_cache";
+                }
+                else if (hive::core::ReadEnvVar("XDG_CACHE_HOME", localAppData, sizeof(localAppData)) &&
+                         localAppData[0] != '\0')
+                {
+                    cachePath = std::filesystem::path{localAppData} / "hiveengine" / "shader_cache";
+                }
+                else if (hive::core::ReadEnvVar("HOME", localAppData, sizeof(localAppData)) && localAppData[0] != '\0')
+                {
+                    cachePath = std::filesystem::path{localAppData} / ".cache" / "hiveengine" / "shader_cache";
+                }
+            }
+            if (!cachePath.empty())
+            {
+                std::error_code ec;
+                std::filesystem::create_directories(cachePath, ec);
+                cachePath /= "swarm_pso_v1.bin";
+                context->m_shaderLibrary->SetDiskCachePath(cachePath.string().c_str());
+                context->m_shaderLibrary->LoadDiskCache();
+            }
         }
 
         if (!InitSceneConstants(context))
@@ -124,6 +200,13 @@ namespace swarm
             return;
         }
 
+        // Hot reload drain. Owned by the render thread: any thread can post a request via
+        // RequestShaderReload; we consume it here so reload runs while no command list is open.
+        if (renderContext->m_shaderLibrary != nullptr && renderContext->m_shaderLibrary->ConsumeReloadRequest())
+        {
+            renderContext->m_shaderLibrary->ReloadIfDirty();
+        }
+
         // Lazy Begin: only deferred[0] is guaranteed to record (clear + at least one draw in
         // serial mode). Workers >0 are Begun by PrepareWorkerFrame only when they actually
         // run. This avoids Begin/FinishCommandList on contexts that never record anything,
@@ -143,8 +226,7 @@ namespace swarm
 
         ITextureView* renderTargetView = renderContext->m_swapchain->GetCurrentBackBufferRTV();
         ITextureView* depthStencilView = renderContext->m_swapchain->GetDepthBufferDSV();
-        primary->SetRenderTargets(1, &renderTargetView, depthStencilView,
-                                  RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        primary->SetRenderTargets(1, &renderTargetView, depthStencilView, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         constexpr float kClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
         primary->ClearRenderTarget(renderTargetView, kClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -156,8 +238,7 @@ namespace swarm
     void EndFrame(RenderContext* renderContext)
     {
         using namespace Diligent;
-        if (renderContext == nullptr || renderContext->m_swapchain == nullptr ||
-            renderContext->m_context == nullptr)
+        if (renderContext == nullptr || renderContext->m_swapchain == nullptr || renderContext->m_context == nullptr)
         {
             return;
         }
@@ -253,6 +334,33 @@ namespace swarm
             ctx->m_swapchain->Resize(width, height);
     }
 
+    void AddShaderSearchPath(RenderContext* ctx, const char* directory)
+    {
+        if (ctx == nullptr || ctx->m_shaderLibrary == nullptr)
+        {
+            return;
+        }
+        ctx->m_shaderLibrary->AddSearchPath(directory);
+    }
+
+    void RequestShaderReload(RenderContext* ctx)
+    {
+        if (ctx == nullptr || ctx->m_shaderLibrary == nullptr)
+        {
+            return;
+        }
+        ctx->m_shaderLibrary->RequestReload();
+    }
+
+    bool FlushShaderCache(RenderContext* ctx)
+    {
+        if (ctx == nullptr || ctx->m_shaderLibrary == nullptr)
+        {
+            return false;
+        }
+        return ctx->m_shaderLibrary->SaveDiskCache();
+    }
+
     uint32_t GetDeferredContextCount(const RenderContext* renderContext)
     {
         return renderContext == nullptr ? 0 : renderContext->m_deferredContextCount;
@@ -305,8 +413,7 @@ namespace swarm
     };
 
     static void CreateViewportRTTextures(ViewportRT* rt, uint32_t width, uint32_t height,
-                                         Diligent::TEXTURE_FORMAT colorFormat,
-                                         Diligent::TEXTURE_FORMAT depthFormat)
+                                         Diligent::TEXTURE_FORMAT colorFormat, Diligent::TEXTURE_FORMAT depthFormat)
     {
         using namespace Diligent;
         rt->m_color.Release();
@@ -314,7 +421,7 @@ namespace swarm
         rt->m_width = width;
         rt->m_height = height;
 
-        TextureDesc colorDesc;
+        Diligent::TextureDesc colorDesc;
         colorDesc.Name = "ViewportRT Color";
         colorDesc.Type = RESOURCE_DIM_TEX_2D;
         colorDesc.Width = width;
@@ -325,7 +432,7 @@ namespace swarm
         rt->m_rtv = rt->m_color->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET);
         rt->m_srv = rt->m_color->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
 
-        TextureDesc depthDesc;
+        Diligent::TextureDesc depthDesc;
         depthDesc.Name = "ViewportRT Depth";
         depthDesc.Type = RESOURCE_DIM_TEX_2D;
         depthDesc.Width = width;
@@ -346,8 +453,7 @@ namespace swarm
         auto* rt = comb::New<ViewportRT>(allocator);
         rt->m_device = ctx->m_device;
         const auto& swapchainDesc = ctx->m_swapchain->GetDesc();
-        CreateViewportRTTextures(rt, width, height, swapchainDesc.ColorBufferFormat,
-                                 swapchainDesc.DepthBufferFormat);
+        CreateViewportRTTextures(rt, width, height, swapchainDesc.ColorBufferFormat, swapchainDesc.DepthBufferFormat);
         return rt;
     }
 

@@ -1,155 +1,37 @@
-#include <nectar/material/material_serializer.h>
-
+#include <nectar/core/asset_id.h>
 #include <nectar/core/file_util.h>
 #include <nectar/hive/hive_document.h>
 #include <nectar/hive/hive_parser.h>
 #include <nectar/hive/hive_writer.h>
+#include <nectar/material/material_serializer.h>
 
 #include <cstdio>
-#include <cstring>
 
 namespace nectar
 {
-    namespace
-    {
-        constexpr char kHex[] = "0123456789abcdef";
-
-        wax::StringView BlendModeToString(MaterialData::BlendMode mode)
-        {
-            switch (mode)
-            {
-                case MaterialData::BlendMode::ALPHA_TEST:
-                    return "alpha_test";
-                case MaterialData::BlendMode::ALPHA_BLEND:
-                    return "alpha_blend";
-                default:
-                    return "opaque";
-            }
-        }
-
-        MaterialData::BlendMode StringToBlendMode(wax::StringView str)
-        {
-            if (str == wax::StringView{"alpha_test"})
-                return MaterialData::BlendMode::ALPHA_TEST;
-            if (str == wax::StringView{"alpha_blend"})
-                return MaterialData::BlendMode::ALPHA_BLEND;
-            return MaterialData::BlendMode::BLEND_OPAQUE;
-        }
-
-        wax::String FormatBaseColor(const float (&f)[4], comb::DefaultAllocator& alloc)
-        {
-            char buf[128];
-            int len = std::snprintf(buf, sizeof(buf), "%g %g %g %g", f[0], f[1], f[2], f[3]);
-            return wax::String{alloc, wax::StringView{buf, static_cast<size_t>(len)}};
-        }
-
-        void ParseBaseColor(wax::StringView str, float (&out)[4])
-        {
-            char buf[128];
-            size_t len = str.Size() < sizeof(buf) - 1 ? str.Size() : sizeof(buf) - 1;
-            std::memcpy(buf, str.Data(), len);
-            buf[len] = '\0';
-
-            float r = 1.f, g = 1.f, b = 1.f, a = 1.f;
-            std::sscanf(buf, "%f %f %f %f", &r, &g, &b, &a);
-            out[0] = r;
-            out[1] = g;
-            out[2] = b;
-            out[3] = a;
-        }
-
-        wax::String AssetIdToGuidString(AssetId id, comb::DefaultAllocator& alloc)
-        {
-            char buf[35];
-            uint64_t high = id.High();
-            uint64_t low = id.Low();
-
-            buf[0] = '{';
-            for (size_t i = 0; i < 8; ++i)
-            {
-                uint8_t byte = static_cast<uint8_t>(high >> (56 - i * 8));
-                buf[1 + i * 2] = kHex[byte >> 4];
-                buf[1 + i * 2 + 1] = kHex[byte & 0x0F];
-            }
-            for (size_t i = 0; i < 8; ++i)
-            {
-                uint8_t byte = static_cast<uint8_t>(low >> (56 - i * 8));
-                buf[17 + i * 2] = kHex[byte >> 4];
-                buf[17 + i * 2 + 1] = kHex[byte & 0x0F];
-            }
-            buf[33] = '}';
-            buf[34] = '\0';
-
-            return wax::String{alloc, wax::StringView{buf, 34}};
-        }
-
-        uint8_t HexDigit(char c)
-        {
-            if (c >= '0' && c <= '9')
-                return static_cast<uint8_t>(c - '0');
-            if (c >= 'a' && c <= 'f')
-                return static_cast<uint8_t>(10 + c - 'a');
-            if (c >= 'A' && c <= 'F')
-                return static_cast<uint8_t>(10 + c - 'A');
-            return 0;
-        }
-
-        AssetId ParseGuidString(wax::StringView str)
-        {
-            if (str.Size() < 34)
-                return AssetId::Invalid();
-
-            const char* s = str.Data();
-            if (s[0] != '{' || s[33] != '}')
-                return AssetId::Invalid();
-
-            uint64_t high = 0;
-            uint64_t low = 0;
-
-            for (size_t i = 0; i < 16; ++i)
-                high = (high << 4) | HexDigit(s[1 + i]);
-            for (size_t i = 0; i < 16; ++i)
-                low = (low << 4) | HexDigit(s[17 + i]);
-
-            return AssetId{high, low};
-        }
-
-        void WriteGuidField(HiveDocument& doc, wax::StringView section, wax::StringView key, AssetId id,
-                            comb::DefaultAllocator& alloc)
-        {
-            if (id.IsValid())
-                doc.SetValue(section, key, HiveValue::MakeString(alloc, AssetIdToGuidString(id, alloc).View()));
-        }
-
-        AssetId ReadGuidField(const HiveDocument& doc, wax::StringView section, wax::StringView key)
-        {
-            auto val = doc.GetString(section, key);
-            if (val.IsEmpty())
-                return AssetId::Invalid();
-            return ParseGuidString(val);
-        }
-    } // namespace
-
     bool SaveMaterial(const MaterialData& mat, wax::StringView path, comb::DefaultAllocator& alloc)
     {
         HiveDocument doc{alloc};
 
-        doc.SetValue("material", "name", HiveValue::MakeString(alloc, mat.m_name.View()));
-        doc.SetValue("material", "shader", HiveValue::MakeString(alloc, mat.m_shader.View()));
-        doc.SetValue("material", "blend", HiveValue::MakeString(alloc, BlendModeToString(mat.m_blendMode)));
-        doc.SetValue("material", "double_sided", HiveValue::MakeBool(mat.m_doubleSided));
-        doc.SetValue("material", "alpha_cutoff", HiveValue::MakeFloat(static_cast<double>(mat.m_alphaCutoff)));
+        doc.SetValue("material", "shader", HiveValue::MakeString(alloc, mat.m_shaderPath.View()));
 
-        WriteGuidField(doc, "textures", "albedo", mat.m_albedoTexture, alloc);
-        WriteGuidField(doc, "textures", "normal", mat.m_normalTexture, alloc);
-        WriteGuidField(doc, "textures", "metallic_roughness", mat.m_metallicRoughnessTexture, alloc);
-        WriteGuidField(doc, "textures", "emissive", mat.m_emissiveTexture, alloc);
-        WriteGuidField(doc, "textures", "ao", mat.m_aoTexture, alloc);
+        for (auto it = mat.m_paramOverrides.Begin(); it != mat.m_paramOverrides.End(); ++it)
+        {
+            HiveValue copy = it.Value();
+            doc.SetValue("parameters", it.Key().View(), static_cast<HiveValue&&>(copy));
+        }
 
-        doc.SetValue("factors", "base_color",
-                     HiveValue::MakeString(alloc, FormatBaseColor(mat.m_baseColorFactor, alloc).View()));
-        doc.SetValue("factors", "metallic", HiveValue::MakeFloat(static_cast<double>(mat.m_metallicFactor)));
-        doc.SetValue("factors", "roughness", HiveValue::MakeFloat(static_cast<double>(mat.m_roughnessFactor)));
+        for (auto it = mat.m_textureBindings.Begin(); it != mat.m_textureBindings.End(); ++it)
+        {
+            char guid[35];
+            it.Value().ToGuidString(guid);
+            doc.SetValue("textures", it.Key().View(), HiveValue::MakeString(alloc, wax::StringView{guid, 34}));
+        }
+
+        for (auto it = mat.m_featureOverrides.Begin(); it != mat.m_featureOverrides.End(); ++it)
+        {
+            doc.SetValue("features", it.Key().View(), HiveValue::MakeBool(it.Value()));
+        }
 
         wax::String content = HiveWriter::Write(doc, alloc);
         wax::String filePath{alloc, path};
@@ -172,8 +54,7 @@ namespace nectar
         if (!file)
             return false;
 
-        int64_t fileSize = FileSize(file);
-
+        const int64_t fileSize = FileSize(file);
         if (fileSize <= 0)
         {
             std::fclose(file);
@@ -187,8 +68,8 @@ namespace nectar
         size_t remaining = static_cast<size_t>(fileSize);
         while (remaining > 0)
         {
-            size_t toRead = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
-            size_t bytesRead = std::fread(buffer, 1, toRead, file);
+            const size_t toRead = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+            const size_t bytesRead = std::fread(buffer, 1, toRead, file);
             if (bytesRead == 0)
                 break;
             content.Append(buffer, bytesRead);
@@ -202,33 +83,46 @@ namespace nectar
 
         const auto& doc = parseResult.m_document;
 
-        mat.m_name = wax::String{alloc, doc.GetString("material", "name")};
-        mat.m_shader = wax::String{alloc, doc.GetString("material", "shader", "standard_pbr")};
-        mat.m_blendMode = StringToBlendMode(doc.GetString("material", "blend", "opaque"));
-        mat.m_doubleSided = doc.GetBool("material", "double_sided", false);
-        mat.m_alphaCutoff = static_cast<float>(doc.GetFloat("material", "alpha_cutoff", 0.5));
+        mat.m_shaderPath = wax::String{alloc, doc.GetString("material", "shader")};
 
-        mat.m_albedoTexture = ReadGuidField(doc, "textures", "albedo");
-        mat.m_normalTexture = ReadGuidField(doc, "textures", "normal");
-        mat.m_metallicRoughnessTexture = ReadGuidField(doc, "textures", "metallic_roughness");
-        mat.m_emissiveTexture = ReadGuidField(doc, "textures", "emissive");
-        mat.m_aoTexture = ReadGuidField(doc, "textures", "ao");
+        constexpr wax::StringView kParametersSection{"parameters"};
+        constexpr wax::StringView kTexturesSection{"textures"};
+        constexpr wax::StringView kFeaturesSection{"features"};
 
-        wax::StringView baseColorStr = doc.GetString("factors", "base_color");
-        if (!baseColorStr.IsEmpty())
+        for (auto it = doc.Sections().Begin(); it != doc.Sections().End(); ++it)
         {
-            ParseBaseColor(baseColorStr, mat.m_baseColorFactor);
+            const wax::StringView sectionName = it.Key().View();
+            if (sectionName == kParametersSection)
+            {
+                for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
+                {
+                    HiveValue copy = kv.Value();
+                    mat.m_paramOverrides.Insert(wax::String{alloc, kv.Key().View()}, static_cast<HiveValue&&>(copy));
+                }
+            }
+            else if (sectionName == kTexturesSection)
+            {
+                for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
+                {
+                    if (kv.Value().m_type != HiveValue::Type::STRING)
+                        continue;
+                    const wax::StringView guid = kv.Value().AsString();
+                    const AssetId id = AssetId::FromGuidString(guid.Data(), guid.Size());
+                    if (!id.IsValid())
+                        continue;
+                    mat.m_textureBindings.Insert(wax::String{alloc, kv.Key().View()}, id);
+                }
+            }
+            else if (sectionName == kFeaturesSection)
+            {
+                for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
+                {
+                    if (kv.Value().m_type != HiveValue::Type::BOOL)
+                        continue;
+                    mat.m_featureOverrides.Insert(wax::String{alloc, kv.Key().View()}, kv.Value().AsBool());
+                }
+            }
         }
-        else
-        {
-            mat.m_baseColorFactor[0] = 1.f;
-            mat.m_baseColorFactor[1] = 1.f;
-            mat.m_baseColorFactor[2] = 1.f;
-            mat.m_baseColorFactor[3] = 1.f;
-        }
-
-        mat.m_metallicFactor = static_cast<float>(doc.GetFloat("factors", "metallic", 1.0));
-        mat.m_roughnessFactor = static_cast<float>(doc.GetFloat("factors", "roughness", 1.0));
 
         return true;
     }

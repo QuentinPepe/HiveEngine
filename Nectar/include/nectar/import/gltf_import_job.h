@@ -31,7 +31,8 @@ namespace nectar
 
     using GltfProgressFn = void (*)(const char* step, uint32_t current, uint32_t total, void* userData);
 
-    HIVE_API GltfImportResult ExecuteGltfImport(const GltfImportDesc& desc, AssetDatabase& db, comb::DefaultAllocator& alloc,
+    // Implementation lives in the launcher (Brood), not in the engine DLL — no HIVE_API export.
+    GltfImportResult ExecuteGltfImport(const GltfImportDesc& desc, AssetDatabase& db, comb::DefaultAllocator& alloc,
                                        ImportPipeline* pipeline = nullptr, GltfProgressFn progress = nullptr,
                                        void* progressUserData = nullptr);
 } // namespace nectar

@@ -106,8 +106,7 @@ namespace forge
             static const char* ASSET_PATH_MIME = "application/x-hive-asset-paths";
             if (e->mimeData()->hasFormat(ASSET_PATH_MIME))
             {
-                auto paths =
-                    QString::fromUtf8(e->mimeData()->data(ASSET_PATH_MIME)).split('\n', Qt::SkipEmptyParts);
+                auto paths = QString::fromUtf8(e->mimeData()->data(ASSET_PATH_MIME)).split('\n', Qt::SkipEmptyParts);
                 if (!paths.isEmpty() && onAssetDropped)
                 {
                     onAssetDropped(paths.first());
@@ -245,30 +244,33 @@ namespace forge
         closedPix.save(closedPath);
         openPix.save(openPath);
 
-        m_tree->setStyleSheet(QString{
-            "QTreeWidget { background: #1e1e1e; border: none; outline: none; }"
-            "QTreeWidget::item { padding: 2px 0; color: #c8c8c8; }"
-            "QTreeWidget::item:selected { background: #3d2e0a; color: #f0a500; }"
-            "QTreeWidget::item:hover:!selected { background: #2a2a2a; }"
-            "QTreeWidget::branch:has-children:!has-siblings:closed,"
-            "QTreeWidget::branch:closed:has-children:has-siblings {"
-            "  image: url(%1);"
-            "}"
-            "QTreeWidget::branch:open:has-children:!has-siblings,"
-            "QTreeWidget::branch:open:has-children:has-siblings {"
-            "  image: url(%2);"
-            "}"
-        }.arg(closedPath, openPath));
+        m_tree->setStyleSheet(QString{"QTreeWidget { background: #1e1e1e; border: none; outline: none; }"
+                                      "QTreeWidget::item { padding: 2px 0; color: #c8c8c8; }"
+                                      "QTreeWidget::item:selected { background: #3d2e0a; color: #f0a500; }"
+                                      "QTreeWidget::item:hover:!selected { background: #2a2a2a; }"
+                                      "QTreeWidget::branch:has-children:!has-siblings:closed,"
+                                      "QTreeWidget::branch:closed:has-children:has-siblings {"
+                                      "  image: url(%1);"
+                                      "}"
+                                      "QTreeWidget::branch:open:has-children:!has-siblings,"
+                                      "QTreeWidget::branch:open:has-children:has-siblings {"
+                                      "  image: url(%2);"
+                                      "}"}
+                                  .arg(closedPath, openPath));
     }
 
     void HierarchyPanel::SetupDropCallbacks()
     {
         auto* tree = static_cast<DropAwareTree*>(m_tree);
-        tree->onAssetDropped = [this](const QString& path) { emit assetDropped(path); };
+        tree->onAssetDropped = [this](const QString& path) {
+            emit assetDropped(path);
+        };
         tree->onEntityReparent = [this](queen::Entity dragged, queen::Entity target, int dropPos) {
             HandleReparent(dragged, target, dropPos);
         };
-        tree->onEntityDetach = [this](queen::Entity dragged) { HandleDetach(dragged); };
+        tree->onEntityDetach = [this](queen::Entity dragged) {
+            HandleDetach(dragged);
+        };
     }
 
     void HierarchyPanel::SetupShortcuts()
@@ -829,9 +831,12 @@ namespace forge
                 sibIdx = si ? si->m_value : 0;
             }
 
-            // Backup: clone entire subtree (preserves all component data)
             queen::Entity clone = m_currentWorld->CloneEntityRecursive(entity);
             m_undoHidden.insert(EntityKey(clone));
+            if (!m_currentWorld->Has<waggle::Disabled>(clone))
+                m_currentWorld->Set(clone, waggle::Disabled{});
+            if (!m_currentWorld->Has<waggle::EditorOnly>(clone))
+                m_currentWorld->Set(clone, waggle::EditorOnly{});
 
             snapshots->push_back({clone, parent, sibIdx, hadParent});
 
@@ -851,6 +856,10 @@ namespace forge
                         continue;
 
                     m_undoHidden.erase(EntityKey(snap.clone));
+                    if (m_currentWorld->Has<waggle::Disabled>(snap.clone))
+                        m_currentWorld->Remove<waggle::Disabled>(snap.clone);
+                    if (m_currentWorld->Has<waggle::EditorOnly>(snap.clone))
+                        m_currentWorld->Remove<waggle::EditorOnly>(snap.clone);
 
                     if (snap.hadParent && m_currentWorld->IsAlive(snap.originalParent))
                         m_currentWorld->SetParent(snap.clone, snap.originalParent);
@@ -862,7 +871,6 @@ namespace forge
                 Refresh(*m_currentWorld);
             },
             [this, snapshots]() {
-                // Redo: re-hide the clones
                 m_selection.Clear();
                 for (auto& snap : *snapshots)
                 {
@@ -873,6 +881,10 @@ namespace forge
                         m_currentWorld->RemoveParent(snap.clone);
 
                     m_undoHidden.insert(EntityKey(snap.clone));
+                    if (!m_currentWorld->Has<waggle::Disabled>(snap.clone))
+                        m_currentWorld->Set(snap.clone, waggle::Disabled{});
+                    if (!m_currentWorld->Has<waggle::EditorOnly>(snap.clone))
+                        m_currentWorld->Set(snap.clone, waggle::EditorOnly{});
                 }
                 Refresh(*m_currentWorld);
             });

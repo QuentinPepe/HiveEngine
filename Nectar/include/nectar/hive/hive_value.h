@@ -21,7 +21,8 @@ namespace nectar
             BOOL,
             INT,
             FLOAT,
-            STRING_ARRAY
+            STRING_ARRAY,
+            FLOAT_ARRAY
         };
 
         Type m_type{Type::STRING};
@@ -30,6 +31,7 @@ namespace nectar
         double m_floatVal{0.0};
         bool m_boolVal{false};
         wax::Vector<wax::String> m_array{};
+        wax::Vector<double> m_floatArray{};
 
         // -- Factory methods --
 
@@ -73,6 +75,14 @@ namespace nectar
             return v;
         }
 
+        [[nodiscard]] static HiveValue MakeFloatArray(comb::DefaultAllocator& alloc)
+        {
+            HiveValue v{};
+            v.m_type = Type::FLOAT_ARRAY;
+            v.m_floatArray = wax::Vector<double>{alloc};
+            return v;
+        }
+
         // -- Accessors --
 
         [[nodiscard]] wax::StringView AsString() const noexcept
@@ -95,10 +105,18 @@ namespace nectar
         {
             return m_array;
         }
+        [[nodiscard]] const wax::Vector<double>& AsFloatArray() const noexcept
+        {
+            return m_floatArray;
+        }
 
         void PushString(comb::DefaultAllocator& alloc, wax::StringView s)
         {
             m_array.PushBack(wax::String{alloc, s});
+        }
+        void PushFloat(double f)
+        {
+            m_floatArray.PushBack(f);
         }
     };
 } // namespace nectar

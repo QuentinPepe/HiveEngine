@@ -1,19 +1,33 @@
-#include <hive/hive_config.h>
 #include <hive/core/log.h>
+#include <hive/hive_config.h>
+
+#include <comb/default_allocator.h>
 
 #include <wax/containers/string.h>
 
+#include <nectar/database/asset_database.h>
+#include <nectar/database/import_cache.h>
 #include <nectar/material/material_importer.h>
 #include <nectar/mesh/gltf_importer.h>
+#include <nectar/pipeline/cook_pipeline.h>
+#include <nectar/pipeline/import_pipeline.h>
 #include <nectar/pipeline/passthrough_cookers.h>
+#include <nectar/registry/hiveid_file.h>
+#include <nectar/shader/shader_importer.h>
+#include <nectar/shader_program/shader_program_importer.h>
 #include <nectar/texture/texture_importer.h>
 
 #include <waggle/app_context.h>
 #include <waggle/project/project_context.h>
 #include <waggle/project/project_scaffolder.h>
 
+#include <swarm/swarm.h>
+
 #include <terra/terra.h>
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <launcher/launcher_platform.h>
 #include <launcher/launcher_project.h>
 #include <launcher/launcher_scene.h>
@@ -137,15 +151,23 @@ namespace brood::launcher
         static nectar::GltfImporter s_gltfImporter;
         static nectar::TextureImporter s_textureImporter;
         static nectar::MaterialImporter s_materialImporter;
+        static nectar::ShaderImporter s_shaderImporter;
+        static nectar::ShaderProgramImporter s_shaderProgramImporter;
         static nectar::PassthroughMeshCooker s_meshCooker;
         static nectar::PassthroughTextureCooker s_textureCooker;
         static nectar::PassthroughMaterialCooker s_materialCooker;
+        static nectar::PassthroughShaderCooker s_shaderCooker;
+        static nectar::PassthroughShaderProgramCooker s_shaderProgramCooker;
         state.m_project->RegisterImporter(&s_gltfImporter);
         state.m_project->RegisterImporter(&s_textureImporter);
         state.m_project->RegisterImporter(&s_materialImporter);
+        state.m_project->RegisterImporter(&s_shaderImporter);
+        state.m_project->RegisterImporter(&s_shaderProgramImporter);
         state.m_project->RegisterCooker(&s_meshCooker);
         state.m_project->RegisterCooker(&s_textureCooker);
         state.m_project->RegisterCooker(&s_materialCooker);
+        state.m_project->RegisterCooker(&s_shaderCooker);
+        state.m_project->RegisterCooker(&s_shaderProgramCooker);
 
         const auto& project = state.m_project->Project();
         hive::LogInfo(LOG_LAUNCHER, "Project '{}' v{}", std::string_view{project.Name().Data(), project.Name().Size()},
@@ -157,6 +179,96 @@ namespace brood::launcher
         {
             const wax::String windowTitle = BuildWindowTitle(projectPath);
             terra::SetWindowTitle(ctx.m_window, windowTitle.CStr());
+        }
+
+        const std::filesystem::path projectAssetsDir =
+            std::filesystem::path{projectPath.CStr()}.parent_path() / "assets";
+        const std::filesystem::path projectShaderDir = projectAssetsDir / "shaders";
+        if (ctx.m_renderContext != nullptr)
+        {
+            swarm::AddShaderSearchPath(ctx.m_renderContext, projectShaderDir.string().c_str());
+        }
+
+        {
+            const std::filesystem::path engineShaderDir =
+                GetCurrentExecutablePath().parent_path() / "shaders" / "engine";
+            if (std::filesystem::is_directory(engineShaderDir))
+            {
+                const auto engineShaderStr = engineShaderDir.generic_string();
+                state.m_project->MountEngineAssets(wax::StringView{engineShaderStr.c_str(), engineShaderStr.size()},
+                                                   wax::StringView{"engine"});
+                hive::LogInfo(LOG_LAUNCHER, "Mounted engine assets at 'engine/' -> {}", engineShaderStr);
+            }
+        }
+
+        if (std::filesystem::is_directory(projectAssetsDir))
+        {
+            wax::Vector<nectar::AssetId> shaderAssets{comb::GetDefaultAllocator()};
+            wax::Vector<nectar::AssetId> otherAssets{comb::GetDefaultAllocator()};
+            std::error_code ec;
+            for (const auto& entry : std::filesystem::recursive_directory_iterator{projectAssetsDir, ec})
+            {
+                if (ec || !entry.is_regular_file())
+                    continue;
+                auto ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+                const bool isShader = (ext == ".hlsl");
+                const bool isShaderProgram = (ext == ".hshader");
+                const bool isMaterial = (ext == ".hmat");
+                const bool isTexture = (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tga" ||
+                                        ext == ".bmp" || ext == ".hdr");
+                if (!isShader && !isShaderProgram && !isMaterial && !isTexture)
+                    continue;
+                auto relPath = std::filesystem::relative(entry.path(), projectAssetsDir, ec).generic_string();
+                if (ec || relPath.empty())
+                    continue;
+                nectar::AssetId id = nectar::AssetIdFromPath(relPath.c_str());
+                if (isTexture)
+                {
+                    nectar::HiveIdData hid{};
+                    const auto hiveidPath = entry.path().string() + ".hiveid";
+                    if (nectar::ReadHiveId(hiveidPath.c_str(), hid, comb::GetDefaultAllocator()) &&
+                        hid.m_guid.IsValid())
+                    {
+                        id = hid.m_guid;
+                    }
+                }
+                const bool needsImport = !state.m_project->Database().Contains(id) ||
+                                         state.m_project->Import().NeedsReimport(id);
+                if (needsImport)
+                {
+                    nectar::ImportRequest req;
+                    req.m_sourcePath = wax::StringView{relPath.c_str(), relPath.size()};
+                    req.m_assetId = id;
+                    const auto output = state.m_project->Import().ImportAsset(req);
+                    if (!output.m_success)
+                    {
+                        hive::LogWarning(LOG_LAUNCHER, "Auto-import failed for '{}': {}", relPath,
+                                         output.m_errorMessage.CStr());
+                        continue;
+                    }
+                }
+                if (isShader)
+                    shaderAssets.PushBack(id);
+                else
+                    otherAssets.PushBack(id);
+            }
+            const size_t totalImported = shaderAssets.Size() + otherAssets.Size();
+            if (totalImported > 0)
+            {
+                hive::LogInfo(LOG_LAUNCHER, "Auto-imported {} project asset(s)", totalImported);
+                wax::Vector<nectar::AssetId> all{comb::GetDefaultAllocator()};
+                for (size_t i = 0; i < shaderAssets.Size(); ++i)
+                    all.PushBack(shaderAssets[i]);
+                for (size_t i = 0; i < otherAssets.Size(); ++i)
+                    all.PushBack(otherAssets[i]);
+                nectar::CookRequest req;
+                req.m_assets = static_cast<wax::Vector<nectar::AssetId>&&>(all);
+                req.m_platform = wax::StringView{"pc"};
+                req.m_workerCount = 1;
+                (void)state.m_project->Cook().CookAll(req);
+                state.m_project->SaveImportCache();
+            }
         }
 
 #if HIVE_MODE_EDITOR

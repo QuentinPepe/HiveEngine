@@ -16,6 +16,7 @@ target_sources(Waggle
         src/waggle/systems/editor_camera_system.cpp
         src/waggle/render/render_module.cpp
         src/waggle/engine_runner.cpp
+        src/waggle/profiling/frame_bench.cpp
         src/waggle/project/project_manager.cpp
         src/waggle/project/gameplay_module.cpp
         src/waggle/project/cmake_generator.cpp

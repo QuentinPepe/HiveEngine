@@ -124,6 +124,33 @@ namespace
         larvae::AssertTrue(result.m_ok);
     });
 
+    auto t_reuse = larvae::RegisterTest("PropolisValidator", "ValidatorIsReusable", []() {
+        NodeRegistry reg;
+        Graph g;
+
+        auto constNode = g.AddNode("Constant");
+        auto constOut = g.AddPin(constNode, PinDirection::OUTPUT, PType::Float32(), "Value");
+
+        auto addNode = g.AddNode("Add");
+        auto addA = g.AddPin(addNode, PinDirection::INPUT, PType{}, "A");
+        auto addB = g.AddPin(addNode, PinDirection::INPUT, PType{}, "B");
+        auto addOut = g.AddPin(addNode, PinDirection::OUTPUT, PType{}, "Result");
+
+        (void)g.AddEdge(constOut, addA);
+        (void)g.AddEdge(constOut, addB);
+
+        GraphValidator validator;
+        auto first = validator.Validate(g, reg);
+        larvae::AssertTrue(first.m_ok);
+
+        auto second = validator.Validate(g, reg);
+        larvae::AssertTrue(second.m_ok);
+
+        const PType* outType = second.m_resolvedPinTypes.Find(addOut.m_value);
+        larvae::AssertTrue(outType != nullptr);
+        larvae::AssertTrue(*outType == PType::Float32());
+    });
+
     auto t6 = larvae::RegisterTest("PropolisValidator", "DisconnectedNodeIsValid", []() {
         NodeRegistry reg;
         Graph g;

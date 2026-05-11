@@ -19,13 +19,13 @@ namespace queen
     namespace detail
     {
         // Detect wax::FixedString without including the header.
-        // FixedString has: static constexpr size_t MaxCapacity = 22, CStr(), Size()
+        // Struct layout: char buffer_[MaxCapacity + 1] + uint8_t m_size.
         template <typename T>
         concept IsFixedString = requires(const T& s) {
             { T::MaxCapacity } -> std::convertible_to<size_t>;
             { s.CStr() } -> std::same_as<const char*>;
             { s.Size() } -> std::same_as<size_t>;
-        } && (sizeof(T) == 24) && std::is_trivially_copyable_v<T>;
+        } && (sizeof(T) == T::MaxCapacity + 2) && std::is_trivially_copyable_v<T>;
     } // namespace detail
 
     /**

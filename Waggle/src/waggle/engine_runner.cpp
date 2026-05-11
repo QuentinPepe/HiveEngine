@@ -5,8 +5,15 @@
 #include <comb/default_allocator.h>
 #include <comb/new.h>
 
+#include <drone/counter.h>
+#include <drone/frame_pipeline.h>
+#include <drone/signal.h>
+
 #include <waggle/engine_runner.h>
+#include <waggle/profiling/frame_bench.h>
+#include <waggle/render/render_frame.h>
 #include <waggle/render/render_module.h>
+#include <waggle/render/render_resource.h>
 #include <waggle/systems/editor_camera_system.h>
 #include <waggle/systems/mesh_render_system.h>
 
@@ -16,6 +23,9 @@
 
 #include <antennae/input.h>
 #include <antennae/keyboard.h>
+
+#include <atomic>
+#include <thread>
 
 static const hive::LogCategory LOG_ENGINE{"Waggle.EngineRunner"};
 
@@ -32,6 +42,7 @@ namespace
             : m_config{config}
             , m_callbacks{callbacks}
             , m_app{config.m_app}
+            , m_bench{m_app}
         {
             m_context.m_app = &m_app;
             m_context.m_world = &m_app.GetWorld();
@@ -43,6 +54,8 @@ namespace
             terra::SetWindowTitle(m_windowContext, config.m_windowTitle);
             terra::SetWindowSize(m_windowContext, static_cast<int>(config.m_windowWidth),
                                  static_cast<int>(config.m_windowHeight));
+
+            m_bench.Configure(config.m_useRenderThread ? "render_thread" : "inline");
         }
 
         ~EngineSession()
@@ -162,6 +175,7 @@ namespace
             {
                 hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
             }
+            m_app.GetWorld().InsertResource(waggle::RenderResource{m_renderModule, m_renderContext});
             return true;
         }
 
@@ -219,15 +233,22 @@ namespace
             {
                 hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
             }
+            m_app.GetWorld().InsertResource(waggle::RenderResource{m_renderModule, renderContext});
         }
 
-        void RenderECS(terra::WindowContext* window)
+        void RenderECSInline(terra::WindowContext* window, swarm::RenderContext* renderContext)
         {
-            if (m_renderModule == nullptr)
+            if (m_renderModule == nullptr || renderContext == nullptr)
             {
                 return;
             }
-            waggle::RenderMeshes(m_app.GetWorld(), *m_renderModule, ComputeAspect(window), m_config.m_jobs);
+            waggle::RenderFrame frame{comb::GetDefaultMemoryResource()};
+            m_bench.BeginBuild();
+            waggle::BuildRenderFrame(m_app.GetWorld(), *m_renderModule, ComputeAspect(window), frame);
+            m_bench.EndBuild();
+            m_bench.BeginExecute();
+            waggle::ExecuteRenderFrame(*m_renderModule, frame, m_config.m_jobs);
+            m_bench.EndExecute();
         }
 
         void TickEditorCameras()
@@ -235,11 +256,110 @@ namespace
             waggle::UpdateEditorCameras(m_app.GetWorld());
         }
 
+        void StartRenderThreadIfReady(swarm::RenderContext* renderContext)
+        {
+            if (m_renderThreadActive || !m_config.m_useRenderThread || renderContext == nullptr ||
+                m_renderModule == nullptr)
+            {
+                return;
+            }
+            m_renderShouldStop.store(false, std::memory_order_release);
+            m_renderDone.Reset(0);
+            m_renderKick.Reset();
+            m_pendingRenderFrame = false;
+            m_renderThread = std::thread{&EngineSession::RenderThreadMain, this};
+            m_renderThreadActive = true;
+            hive::LogInfo(LOG_ENGINE, "Render thread started");
+        }
+
+        void StopRenderThread()
+        {
+            if (!m_renderThreadActive)
+            {
+                return;
+            }
+            // Drain any in-flight frame before signaling termination so the renderer never
+            // touches Swarm after we tear it down.
+            if (m_pendingRenderFrame)
+            {
+                m_renderDone.Wait();
+                m_pendingRenderFrame = false;
+            }
+            m_renderShouldStop.store(true, std::memory_order_release);
+            m_renderKick.Set();
+            if (m_renderThread.joinable())
+            {
+                m_renderThread.join();
+            }
+            m_renderThreadActive = false;
+            hive::LogInfo(LOG_ENGINE, "Render thread stopped");
+        }
+
+        void RenderThreadMain()
+        {
+            HIVE_PROFILE_THREAD("Render");
+            while (!m_renderShouldStop.load(std::memory_order_acquire))
+            {
+                m_renderKick.WaitAndReset();
+                if (m_renderShouldStop.load(std::memory_order_acquire))
+                {
+                    break;
+                }
+
+                const waggle::RenderFrame& frame = m_renderFrames.ForRead(m_frameIndex);
+                if (frame.m_terminationRequested)
+                {
+                    m_renderDone.Decrement();
+                    break;
+                }
+
+                swarm::RenderContext* renderContext = m_context.m_renderContext;
+                if (renderContext != nullptr)
+                {
+                    HIVE_PROFILE_SCOPE_N("RenderThread::Frame");
+                    if (frame.m_resizePending && frame.m_resizeWidth > 0 && frame.m_resizeHeight > 0)
+                    {
+                        swarm::ResizeSwapchain(renderContext, frame.m_resizeWidth, frame.m_resizeHeight);
+                    }
+                    m_bench.BeginExecute();
+                    swarm::BeginFrame(renderContext);
+                    waggle::ExecuteRenderFrame(*m_renderModule, frame, m_config.m_jobs);
+                    swarm::EndFrame(renderContext);
+                    m_bench.EndExecute();
+                }
+
+                m_renderDone.Decrement();
+            }
+        }
+
+        void BuildAndKickRenderFrame(terra::WindowContext* window, swarm::RenderContext* renderContext)
+        {
+            // Wait for previous frame's render submission to complete before reusing its
+            // FrameData slot. FramePipeline pattern: write[t] is read[t-1] after the flip.
+            if (m_pendingRenderFrame)
+            {
+                m_renderDone.Wait();
+                m_pendingRenderFrame = false;
+            }
+            m_frameIndex.Flip();
+
+            waggle::RenderFrame& writeFrame = m_renderFrames.ForWrite(m_frameIndex);
+            waggle::ResetRenderFrame(writeFrame);
+            m_bench.BeginBuild();
+            waggle::BuildRenderFrame(m_app.GetWorld(), *m_renderModule, ComputeAspect(window), writeFrame);
+            m_bench.EndBuild();
+
+            m_renderDone.Reset(1);
+            m_renderKick.Set();
+            m_pendingRenderFrame = true;
+        }
+
         void RunDeferredLoop()
         {
             while (m_app.IsRunning())
             {
                 HIVE_PROFILE_SCOPE_N("Frame");
+                m_bench.BeginFrame();
 
                 if (m_context.m_window != nullptr)
                 {
@@ -269,30 +389,39 @@ namespace
                     m_app.Tick();
                 }
 
-                if (m_context.m_renderContext != nullptr)
+                if (m_context.m_renderContext != nullptr && m_renderModule == nullptr)
                 {
                     EnsureRenderModule(m_context.m_renderContext);
-                    swarm::BeginFrame(m_context.m_renderContext);
                 }
+                StartRenderThreadIfReady(m_context.m_renderContext);
 
                 if (m_callbacks.m_onFrame != nullptr)
                 {
                     m_callbacks.m_onFrame(m_context, m_callbacks.m_userData);
                 }
 
-                if (m_context.m_renderContext != nullptr)
+                if (m_renderThreadActive)
                 {
-                    RenderECS(m_context.m_window);
+                    BuildAndKickRenderFrame(m_context.m_window, m_context.m_renderContext);
+                }
+                else if (m_context.m_renderContext != nullptr)
+                {
+                    swarm::BeginFrame(m_context.m_renderContext);
+                    RenderECSInline(m_context.m_window, m_context.m_renderContext);
                     swarm::EndFrame(m_context.m_renderContext);
                 }
+
+                m_bench.EndFrame();
             }
         }
 
         void RunGraphicalLoop()
         {
+            StartRenderThreadIfReady(m_renderContext);
             while (!terra::ShouldWindowClose(m_windowContext) && m_app.IsRunning())
             {
                 HIVE_PROFILE_SCOPE_N("Frame");
+                m_bench.BeginFrame();
                 terra::PollEvents(m_windowContext);
                 if (m_callbacks.m_onPrePoll != nullptr)
                 {
@@ -306,21 +435,23 @@ namespace
                     m_app.Tick();
                 }
 
-                if (m_rendererInitialized)
-                {
-                    swarm::BeginFrame(m_renderContext);
-                }
-
                 if (m_callbacks.m_onFrame != nullptr)
                 {
                     m_callbacks.m_onFrame(m_context, m_callbacks.m_userData);
                 }
 
-                if (m_rendererInitialized)
+                if (m_renderThreadActive)
                 {
-                    RenderECS(m_windowContext);
+                    BuildAndKickRenderFrame(m_windowContext, m_renderContext);
+                }
+                else if (m_rendererInitialized)
+                {
+                    swarm::BeginFrame(m_renderContext);
+                    RenderECSInline(m_windowContext, m_renderContext);
                     swarm::EndFrame(m_renderContext);
                 }
+
+                m_bench.EndFrame();
             }
         }
 
@@ -355,6 +486,10 @@ namespace
 
         void Cleanup()
         {
+            // Drain and stop the render thread before tearing down Swarm so we never destroy
+            // a render context that the render thread is still touching.
+            StopRenderThread();
+
             if (m_renderModule != nullptr)
             {
                 comb::Delete(comb::GetDefaultAllocator(), m_renderModule);
@@ -363,8 +498,7 @@ namespace
 
             // Either path that owned a render context implies swarm::InitSystem was called.
             // Capture the "need shutdown" flag before destroying the context.
-            const bool needRendererShutdown =
-                m_rendererSystemInitialized || m_context.m_renderContext != nullptr;
+            const bool needRendererShutdown = m_rendererSystemInitialized || m_context.m_renderContext != nullptr;
             if (m_context.m_renderContext != nullptr)
             {
                 swarm::DestroyRenderContext(m_context.m_renderContext);
@@ -422,6 +556,19 @@ namespace
         bool m_rendererInitialized{false};
 
         waggle::RenderModule* m_renderModule{nullptr};
+
+        // Render thread state. FrameData double-buffers the RenderFrame so the game thread
+        // writes frame N+1 while the render thread reads frame N (one frame of latency).
+        drone::FrameIndex m_frameIndex{};
+        drone::FrameData<waggle::RenderFrame> m_renderFrames;
+        drone::Signal m_renderKick{};
+        drone::Counter m_renderDone{};
+        std::thread m_renderThread{};
+        std::atomic<bool> m_renderShouldStop{false};
+        bool m_renderThreadActive{false};
+        bool m_pendingRenderFrame{false};
+
+        waggle::FrameBench m_bench;
     };
 } // namespace
 

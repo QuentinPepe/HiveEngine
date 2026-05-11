@@ -2,6 +2,8 @@
 
 #include <wax/containers/vector.h>
 
+#include <cstdio>
+
 namespace nectar
 {
     namespace
@@ -80,6 +82,20 @@ namespace nectar
                             }
                         }
                         out.Append('"');
+                    }
+                    out.Append(']');
+                    break;
+
+                case HiveValue::Type::FLOAT_ARRAY:
+                    out.Append('[');
+                    for (size_t i = 0; i < value.m_floatArray.Size(); ++i)
+                    {
+                        if (i > 0)
+                            out.Append(", ", 2);
+                        char buf[64];
+                        const int len = std::snprintf(buf, sizeof(buf), "%.6g", value.m_floatArray[i]);
+                        if (len > 0)
+                            out.Append(buf, static_cast<size_t>(len));
                     }
                     out.Append(']');
                     break;

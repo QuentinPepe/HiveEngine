@@ -329,6 +329,23 @@ namespace
         larvae::AssertNull(not_found);
     });
 
+    auto test_reuse_after_move = larvae::RegisterTest("WaxHashMap", "InsertAfterMovedFrom", []() {
+        comb::BuddyAllocator alloc{16384};
+        wax::HashMap<int, int> source{alloc, 16};
+
+        source.Insert(1, 10);
+        source.Insert(2, 20);
+
+        wax::HashMap<int, int> sink{static_cast<wax::HashMap<int, int>&&>(source)};
+        larvae::AssertEqual(sink.Count(), size_t{2});
+
+        bool inserted = source.Insert(7, 700);
+        larvae::AssertTrue(inserted);
+        larvae::AssertEqual(source.Count(), size_t{1});
+        larvae::AssertNotNull(source.Find(7));
+        larvae::AssertEqual(*source.Find(7), 700);
+    });
+
     auto test20 = larvae::RegisterTest("WaxHashMap", "RangeForLoop", []() {
         comb::LinearAllocator alloc{4096};
         wax::HashMap<int, int> map{alloc, 16};

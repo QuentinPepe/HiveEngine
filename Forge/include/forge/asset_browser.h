@@ -135,6 +135,7 @@ namespace forge
         void OnImportClicked();
         void OnNewFolderClicked();
         void OnNewBlueprintClicked();
+        void CreateMaterialFromShader(const std::filesystem::path& shaderPath);
 
         void RenamePath(const std::filesystem::path& fsPath);
         void DeletePath(const std::filesystem::path& fsPath);

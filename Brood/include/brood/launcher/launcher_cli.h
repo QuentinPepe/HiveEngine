@@ -127,7 +127,8 @@ namespace brood::launcher
     inline void PrintUsage()
     {
         std::fprintf(stderr, "Usage: hive_launcher [--editor|--game|--headless] [--project path/to/project.hive]\n"
-                             "                     [--exit-after-setup] [path/to/project.hive]\n"
+                             "                     [--exit-after-setup] [--render-thread]\n"
+                             "                     [path/to/project.hive]\n"
                              "       Positional project paths remain supported for compatibility.\n");
     }
 
@@ -169,6 +170,12 @@ namespace brood::launcher
             if (std::strcmp(arg, "--exit-after-setup") == 0)
             {
                 commandLine->m_exitAfterSetup = true;
+                continue;
+            }
+
+            if (std::strcmp(arg, "--render-thread") == 0)
+            {
+                commandLine->m_useRenderThread = true;
                 continue;
             }
 

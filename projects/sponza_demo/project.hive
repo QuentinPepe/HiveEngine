@@ -5,3 +5,6 @@ version = "0.1.0"
 [paths]
 assets = "assets"
 cache = "assets/.nectar"
+
+[startup]
+scene = "scenes/main.hscene"

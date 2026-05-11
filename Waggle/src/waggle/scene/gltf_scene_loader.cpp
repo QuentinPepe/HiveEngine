@@ -43,6 +43,7 @@ namespace waggle
         queen::World& world;
         GltfSceneLoadResult& result;
         cgltf_data* gltfData;
+        const char* modelDir{""};
     };
 
     // Decompose a column-major 4x4 matrix into TRS.
@@ -179,16 +180,16 @@ namespace waggle
                 {
                     auto matIdx = static_cast<int32_t>(prim.material - ctx.gltfData->materials);
                     meshRef.m_materialIndex = matIdx;
+                    char hmatPath[128];
                     if (prim.material->name && prim.material->name[0] != '\0')
                     {
-                        meshRef.m_materialName = wax::FixedString{prim.material->name};
+                        std::snprintf(hmatPath, sizeof(hmatPath), "%s/%s.hmat", ctx.modelDir, prim.material->name);
                     }
                     else
                     {
-                        char fallback[24];
-                        std::snprintf(fallback, sizeof(fallback), "Material_%d", matIdx);
-                        meshRef.m_materialName = wax::FixedString{fallback};
+                        std::snprintf(hmatPath, sizeof(hmatPath), "%s/Material_%d.hmat", ctx.modelDir, matIdx);
                     }
+                    meshRef.m_material = wax::FixedString{hmatPath};
                 }
 
                 queen::Entity primEntity = ctx.world.Spawn(Name{wax::FixedString{primName}}, Transform{}, WorldMatrix{},
@@ -269,7 +270,24 @@ namespace waggle
             return result;
         }
 
-        SceneLoadContext ctx{world, result, gltfData};
+        wax::String modelDirStr{pathStr};
+        {
+            auto slashPos = modelDirStr.RFind('/');
+            auto backslashPos = modelDirStr.RFind('\\');
+            size_t lastSlash = wax::String::npos;
+            if (slashPos != wax::String::npos && backslashPos != wax::String::npos)
+                lastSlash = slashPos > backslashPos ? slashPos : backslashPos;
+            else if (slashPos != wax::String::npos)
+                lastSlash = slashPos;
+            else
+                lastSlash = backslashPos;
+            if (lastSlash != wax::String::npos)
+                modelDirStr = wax::String{modelDirStr.View().Substr(0, lastSlash)};
+            else
+                modelDirStr.Clear();
+        }
+
+        SceneLoadContext ctx{world, result, gltfData, modelDirStr.CStr()};
 
         cgltf_size sceneIdx = gltfData->scene ? static_cast<cgltf_size>(gltfData->scene - gltfData->scenes) : 0;
         if (sceneIdx < gltfData->scenes_count)
@@ -306,18 +324,29 @@ namespace waggle
             {
                 const auto& src = materials[mi];
 
-                nectar::MaterialData matData{};
-                matData.m_name = src.m_name;
-                std::memcpy(matData.m_baseColorFactor, src.m_baseColorFactor, sizeof(matData.m_baseColorFactor));
-                matData.m_metallicFactor = src.m_metallicFactor;
-                matData.m_roughnessFactor = src.m_roughnessFactor;
-                matData.m_doubleSided = src.m_doubleSided;
-                // Texture GUIDs are resolved during import (gltf_import_job), not here
+                nectar::MaterialData matData{alloc};
+                matData.m_shaderPath = wax::String{alloc, wax::StringView{"engine/shaders/standard_pbr.hshader"}};
 
+                nectar::HiveValue baseColor = nectar::HiveValue::MakeFloatArray(alloc);
+                for (size_t i = 0; i < 4; ++i)
+                    baseColor.PushFloat(static_cast<double>(src.m_baseColorFactor[i]));
+                matData.m_paramOverrides.Insert(wax::String{alloc, wax::StringView{"base_color"}},
+                                                static_cast<nectar::HiveValue&&>(baseColor));
+                matData.m_paramOverrides.Insert(
+                    wax::String{alloc, wax::StringView{"metallic"}},
+                    nectar::HiveValue::MakeFloat(static_cast<double>(src.m_metallicFactor)));
+                matData.m_paramOverrides.Insert(
+                    wax::String{alloc, wax::StringView{"roughness"}},
+                    nectar::HiveValue::MakeFloat(static_cast<double>(src.m_roughnessFactor)));
+
+                if (src.m_doubleSided)
+                    matData.m_featureOverrides.Insert(wax::String{alloc, wax::StringView{"double_sided"}}, true);
                 if (src.m_alphaCutoff > 0.f)
                 {
-                    matData.m_alphaCutoff = src.m_alphaCutoff;
-                    matData.m_blendMode = nectar::MaterialData::BlendMode::ALPHA_TEST;
+                    matData.m_featureOverrides.Insert(wax::String{alloc, wax::StringView{"alpha_test"}}, true);
+                    matData.m_paramOverrides.Insert(
+                        wax::String{alloc, wax::StringView{"alpha_cutoff"}},
+                        nectar::HiveValue::MakeFloat(static_cast<double>(src.m_alphaCutoff)));
                 }
 
                 wax::String matName{};

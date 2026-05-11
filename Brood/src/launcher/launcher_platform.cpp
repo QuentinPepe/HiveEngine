@@ -1,3 +1,5 @@
+#include <hive/platform/process.h>
+
 #include <comb/default_allocator.h>
 
 #include <nectar/project/project_file.h>
@@ -11,35 +13,17 @@
 namespace brood::launcher
 {
 
-#if HIVE_MODE_EDITOR
     std::filesystem::path GetCurrentExecutablePath()
     {
-#if HIVE_PLATFORM_WINDOWS
-        std::wstring buffer(static_cast<size_t>(MAX_PATH), L'\0');
-
-        while (true)
+        char buf[4096]{};
+        if (!hive::GetExecutablePath(buf, sizeof(buf)))
         {
-            const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-            if (length == 0)
-            {
-                return {};
-            }
-
-            if (length < buffer.size() - 1)
-            {
-                buffer.resize(length);
-                return std::filesystem::path{buffer};
-            }
-
-            buffer.resize(buffer.size() * 2);
+            return {};
         }
-#else
-        std::error_code ec;
-        const std::filesystem::path exePath = std::filesystem::read_symlink("/proc/self/exe", ec);
-        return ec ? std::filesystem::path{} : exePath;
-#endif
+        return std::filesystem::path{buf};
     }
 
+#if HIVE_MODE_EDITOR
     bool IsEngineRoot(const std::filesystem::path& path)
     {
         return std::filesystem::exists(path / "CMakeLists.txt") && std::filesystem::exists(path / "HiveFeatures.json");

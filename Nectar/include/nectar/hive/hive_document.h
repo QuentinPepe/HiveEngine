@@ -114,9 +114,21 @@ namespace nectar
         [[nodiscard]] double GetFloat(wax::StringView section, wax::StringView key, double fallback = 0.0) const
         {
             auto* v = GetValue(section, key);
-            if (!v || v->m_type != HiveValue::Type::FLOAT)
+            if (!v)
                 return fallback;
-            return v->AsFloat();
+            if (v->m_type == HiveValue::Type::FLOAT)
+                return v->AsFloat();
+            if (v->m_type == HiveValue::Type::INT)
+                return static_cast<double>(v->AsInt());
+            return fallback;
+        }
+
+        [[nodiscard]] const wax::Vector<double>* GetFloatArray(wax::StringView section, wax::StringView key) const
+        {
+            auto* v = GetValue(section, key);
+            if (!v || v->m_type != HiveValue::Type::FLOAT_ARRAY)
+                return nullptr;
+            return &v->AsFloatArray();
         }
 
         // -- Iteration --

@@ -116,6 +116,7 @@ namespace
             if (state.m_jobSystem)
                 config.m_jobs = drone::MakeJobSubmitter(*state.m_jobSystem);
             config.m_windowTitle = windowTitle.CStr();
+            config.m_useRenderThread = commandLine.m_useRenderThread;
 #if HIVE_MODE_EDITOR
             config.m_windowWidth = 1920;
             config.m_windowHeight = 1080;
@@ -154,6 +155,14 @@ namespace
                     QApplication::processEvents();
 
                     waggle::CreateWindowAndRenderer(ctx, s.m_windowTitle.CStr(), s.m_windowWidth, s.m_windowHeight);
+
+                    // Project shader path may have been queued before the renderer existed.
+                    if (ctx.m_renderContext != nullptr && !s.m_projectPath.IsEmpty())
+                    {
+                        const std::filesystem::path projectShaderDir =
+                            std::filesystem::path{s.m_projectPath.CStr()}.parent_path() / "assets" / "shaders";
+                        swarm::AddShaderSearchPath(ctx.m_renderContext, projectShaderDir.string().c_str());
+                    }
 
                     s.m_mainWindow->ShowEditor();
                     if (ctx.m_renderContext != nullptr && ctx.m_window != nullptr)
@@ -436,6 +445,10 @@ namespace
                 if (s.m_project != nullptr)
                 {
                     s.m_project->Update();
+                    if (s.m_project->ConsumeShaderReloadRequest() && ctx.m_renderContext != nullptr)
+                    {
+                        swarm::RequestShaderReload(ctx.m_renderContext);
+                    }
                 }
 
 #if HIVE_MODE_EDITOR

@@ -7,12 +7,13 @@
 
 #include <nectar/assets/material_asset.h>
 #include <nectar/assets/mesh_asset.h>
+#include <nectar/assets/shader_asset.h>
 #include <nectar/assets/texture_asset.h>
 #include <nectar/cas/cas_store.h>
-#include <nectar/database/dep_cache.h>
 #include <nectar/core/asset_id.h>
 #include <nectar/database/asset_database.h>
 #include <nectar/database/asset_record.h>
+#include <nectar/database/dep_cache.h>
 #include <nectar/io/io_scheduler.h>
 #include <nectar/pipeline/cook_cache.h>
 #include <nectar/pipeline/cook_cache_persist.h>
@@ -181,6 +182,7 @@ namespace waggle
         , m_project{alloc}
         , m_offlineChanges{alloc}
         , m_watcherStatePath{alloc}
+        , m_changedMaterials{alloc}
     {
     }
 
@@ -455,6 +457,7 @@ namespace waggle
         m_server.Reset();
         m_io.Reset();
         m_cas.Reset();
+        m_engineMount.Reset();
         m_casMount.Reset();
         m_assetsMount.Reset();
         m_vfs.Reset();
@@ -537,6 +540,19 @@ namespace waggle
         return m_watcher;
     }
 
+    void ProjectManager::MountEngineAssets(wax::StringView absoluteDir, wax::StringView vfsPrefix)
+    {
+        if (!m_vfs || absoluteDir.IsEmpty())
+            return;
+        if (m_engineMount)
+        {
+            m_vfs->Unmount(vfsPrefix, m_engineMount.Get());
+            m_engineMount.Reset();
+        }
+        m_engineMount = wax::MakeBox<nectar::DiskMountSource>(*m_alloc, absoluteDir, *m_alloc);
+        m_vfs->Mount(vfsPrefix, m_engineMount.Get(), -1);
+    }
+
     void ProjectManager::SaveImportCache()
     {
         if (m_importDb.IsNull() || !m_open)
@@ -586,7 +602,15 @@ namespace waggle
                     else if (record->m_type.View().Equals(wax::StringView{"Mesh", 4}))
                         SwapAsset<nectar::MeshAsset>(*m_server, record->m_path.View(), blobSpan);
                     else if (record->m_type.View().Equals(wax::StringView{"Material", 8}))
+                    {
                         SwapAsset<nectar::MaterialAsset>(*m_server, record->m_path.View(), blobSpan);
+                        m_changedMaterials.PushBack(wax::String{*m_alloc, record->m_path.View()});
+                    }
+                    else if (record->m_type.View().Equals(wax::StringView{"Shader", 6}))
+                    {
+                        SwapAsset<nectar::ShaderAsset>(*m_server, record->m_path.View(), blobSpan);
+                        m_shaderReloadRequested = true;
+                    }
 
                     hive::LogInfo(LOG_PROJECT, "Swapped asset: {} ({})", record->m_path.CStr(), record->m_type.CStr());
                 }
@@ -601,6 +625,30 @@ namespace waggle
     uint32_t ProjectManager::LastReloadCount() const noexcept
     {
         return m_lastReloadCount;
+    }
+
+    bool ProjectManager::ConsumeShaderReloadRequest() noexcept
+    {
+        const bool was = m_shaderReloadRequested;
+        m_shaderReloadRequested = false;
+        return was;
+    }
+
+    wax::ByteBuffer ProjectManager::ReadCookedBlob(nectar::AssetId id)
+    {
+        if (!m_cookCache || !m_cas)
+            return wax::ByteBuffer{};
+        const auto* entry = m_cookCache->Find(id, kDefaultPlatform);
+        if (!entry)
+            return wax::ByteBuffer{};
+        return m_cas->Load(entry->m_cookedHash);
+    }
+
+    void ProjectManager::ConsumeChangedMaterials(wax::Vector<wax::String>& out)
+    {
+        for (size_t i = 0; i < m_changedMaterials.Size(); ++i)
+            out.PushBack(static_cast<wax::String&&>(m_changedMaterials[i]));
+        m_changedMaterials.Clear();
     }
 
 } // namespace waggle

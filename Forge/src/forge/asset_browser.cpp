@@ -1,13 +1,14 @@
-#include <forge/asset_browser.h>
+#include <nectar/registry/hiveid_file.h>
 
-#include <propolis/graph/graph.h>
+#include <forge/asset_browser.h>
+#include <forge/editor_undo.h>
+#include <forge/forge_module.h>
 
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDropEvent>
-#include <QMouseEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QHBoxLayout>
@@ -17,6 +18,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPainter>
@@ -28,14 +30,10 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-#include <forge/editor_undo.h>
-#include <forge/forge_module.h>
-
-#include <nectar/registry/hiveid_file.h>
-
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <propolis/graph/graph.h>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -89,8 +87,8 @@ namespace forge
             QImage img;
             if (img.load(path))
             {
-                QImage scaled = img.scaled(THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE,
-                                           Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                QImage scaled =
+                    img.scaled(THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE, Qt::KeepAspectRatio, Qt::SmoothTransformation);
                 emit Ready(path, scaled);
             }
             else
@@ -393,7 +391,7 @@ namespace forge
             return AssetType::MESH;
         if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp" || ext == ".hdr")
             return AssetType::TEXTURE;
-        if (ext == ".hlsl" || ext == ".glsl" || ext == ".vert" || ext == ".frag")
+        if (ext == ".hlsl" || ext == ".glsl" || ext == ".vert" || ext == ".frag" || ext == ".hshader")
             return AssetType::SHADER;
         if (ext == ".hscene")
             return AssetType::SCENE;
@@ -415,24 +413,24 @@ namespace forge
     {
         switch (type)
         {
-        case AssetType::FOLDER:
-            return QColor{0xf0, 0xa5, 0x00};
-        case AssetType::MESH:
-            return QColor{0x4f, 0xc3, 0xf7};
-        case AssetType::TEXTURE:
-            return QColor{0x81, 0xc7, 0x84};
-        case AssetType::SHADER:
-            return QColor{0xce, 0x93, 0xd8};
-        case AssetType::SCENE:
-            return QColor{0xff, 0xb7, 0x4d};
-        case AssetType::MATERIAL:
-            return QColor{0xef, 0x53, 0x50};
-        case AssetType::AUDIO:
-            return QColor{0xff, 0xf1, 0x76};
-        case AssetType::BLUEPRINT:
-            return QColor{0x4a, 0x90, 0xd9};
-        default:
-            return QColor{0x90, 0x90, 0x90};
+            case AssetType::FOLDER:
+                return QColor{0xf0, 0xa5, 0x00};
+            case AssetType::MESH:
+                return QColor{0x4f, 0xc3, 0xf7};
+            case AssetType::TEXTURE:
+                return QColor{0x81, 0xc7, 0x84};
+            case AssetType::SHADER:
+                return QColor{0xce, 0x93, 0xd8};
+            case AssetType::SCENE:
+                return QColor{0xff, 0xb7, 0x4d};
+            case AssetType::MATERIAL:
+                return QColor{0xef, 0x53, 0x50};
+            case AssetType::AUDIO:
+                return QColor{0xff, 0xf1, 0x76};
+            case AssetType::BLUEPRINT:
+                return QColor{0x4a, 0x90, 0xd9};
+            default:
+                return QColor{0x90, 0x90, 0x90};
         }
     }
 
@@ -440,20 +438,20 @@ namespace forge
     {
         switch (type)
         {
-        case AssetType::MESH:
-            return "MESH";
-        case AssetType::TEXTURE:
-            return "TEX";
-        case AssetType::SHADER:
-            return "SHADER";
-        case AssetType::SCENE:
-            return "SCENE";
-        case AssetType::MATERIAL:
-            return "MAT";
-        case AssetType::AUDIO:
-            return "AUDIO";
-        default:
-            return "FILE";
+            case AssetType::MESH:
+                return "MESH";
+            case AssetType::TEXTURE:
+                return "TEX";
+            case AssetType::SHADER:
+                return "SHADER";
+            case AssetType::SCENE:
+                return "SCENE";
+            case AssetType::MATERIAL:
+                return "MAT";
+            case AssetType::AUDIO:
+                return "AUDIO";
+            default:
+                return "FILE";
         }
     }
 
@@ -654,8 +652,6 @@ namespace forge
         ThumbnailCache* m_cache{};
     };
 
-
-
     static QToolButton* MakeToolBtn(QWidget* parent, const QString& text, const QString& tooltip)
     {
         auto* btn = new QToolButton{parent};
@@ -680,9 +676,8 @@ namespace forge
         m_undoManager = undoManager;
 
         m_thumbnailCache = new ThumbnailCache{this};
-        connect(m_thumbnailCache, &ThumbnailCache::ThumbnailLoaded, this, [this] {
-            m_contentList->viewport()->update();
-        });
+        connect(m_thumbnailCache, &ThumbnailCache::ThumbnailLoaded, this,
+                [this] { m_contentList->viewport()->update(); });
 
         m_refreshDebounce.setSingleShot(true);
         m_refreshDebounce.setInterval(300);
@@ -782,12 +777,13 @@ namespace forge
         layout->addSpacing(6);
 
         auto* newFolderBtn = MakeToolBtn(m_breadcrumbBar, "+", "New Folder");
-        newFolderBtn->setStyleSheet("QToolButton {"
-                                    "  background: transparent; color: #aaa; border: 1px solid #333; border-radius: 3px;"
-                                    "  padding: 2px 8px; font-size: 14px; font-weight: bold;"
-                                    "  font-family: 'Segoe UI', sans-serif;"
-                                    "}"
-                                    "QToolButton:hover { border-color: #f0a500; color: #f0a500; }");
+        newFolderBtn->setStyleSheet(
+            "QToolButton {"
+            "  background: transparent; color: #aaa; border: 1px solid #333; border-radius: 3px;"
+            "  padding: 2px 8px; font-size: 14px; font-weight: bold;"
+            "  font-family: 'Segoe UI', sans-serif;"
+            "}"
+            "QToolButton:hover { border-color: #f0a500; color: #f0a500; }");
         connect(newFolderBtn, &QToolButton::clicked, this, &AssetBrowserPanel::OnNewFolderClicked);
         layout->addWidget(newFolderBtn);
 
@@ -930,14 +926,13 @@ namespace forge
 
             QString normalColor = f.color.name();
             QString dimColor = f.color.darker(200).name();
-            btn->setStyleSheet(
-                QString{"QToolButton {"
-                        "  background: transparent; color: %1; border: none; border-radius: 3px;"
-                        "  padding: 2px 8px; font-size: 10px; font-family: 'Segoe UI', sans-serif;"
-                        "}"
-                        "QToolButton:hover { background: #1e1e1e; }"
-                        "QToolButton:checked { background: #222; color: %2; font-weight: bold; }"}
-                    .arg(dimColor, normalColor));
+            btn->setStyleSheet(QString{"QToolButton {"
+                                       "  background: transparent; color: %1; border: none; border-radius: 3px;"
+                                       "  padding: 2px 8px; font-size: 10px; font-family: 'Segoe UI', sans-serif;"
+                                       "}"
+                                       "QToolButton:hover { background: #1e1e1e; }"
+                                       "QToolButton:checked { background: #222; color: %2; font-weight: bold; }"}
+                                   .arg(dimColor, normalColor));
 
             AssetType capturedType = f.type;
             connect(btn, &QToolButton::clicked, this, [this, capturedType, btn] {
@@ -962,17 +957,16 @@ namespace forge
         m_sortCombo->addItems({"Name", "Type", "Date"});
         m_sortCombo->setCurrentIndex(static_cast<int>(m_sortMode));
         m_sortCombo->setFixedHeight(20);
-        m_sortCombo->setStyleSheet(
-            "QComboBox {"
-            "  background: #1a1a1a; color: #ccc; border: 1px solid #333; border-radius: 3px;"
-            "  padding: 0 6px; font-size: 10px; font-family: 'Segoe UI', sans-serif;"
-            "}"
-            "QComboBox:focus { border-color: #f0a500; }"
-            "QComboBox::drop-down { border: none; width: 14px; }"
-            "QComboBox QAbstractItemView {"
-            "  background: #1a1a1a; color: #e8e8e8; border: 1px solid #2a2a2a;"
-            "  selection-background-color: #3d2e0a; selection-color: #f0a500;"
-            "}");
+        m_sortCombo->setStyleSheet("QComboBox {"
+                                   "  background: #1a1a1a; color: #ccc; border: 1px solid #333; border-radius: 3px;"
+                                   "  padding: 0 6px; font-size: 10px; font-family: 'Segoe UI', sans-serif;"
+                                   "}"
+                                   "QComboBox:focus { border-color: #f0a500; }"
+                                   "QComboBox::drop-down { border: none; width: 14px; }"
+                                   "QComboBox QAbstractItemView {"
+                                   "  background: #1a1a1a; color: #e8e8e8; border: 1px solid #2a2a2a;"
+                                   "  selection-background-color: #3d2e0a; selection-color: #f0a500;"
+                                   "}");
         connect(m_sortCombo, &QComboBox::currentIndexChanged, this,
                 [this](int index) { SetSortMode(static_cast<SortMode>(index)); });
         layout->addWidget(m_sortCombo);
@@ -1272,24 +1266,24 @@ namespace forge
 
         switch (m_sortMode)
         {
-        case SortMode::NAME:
-            std::sort(files.begin(), files.end());
-            break;
-        case SortMode::TYPE:
-            std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
-                auto ta = ClassifyExtension(a.path().extension().string());
-                auto tb = ClassifyExtension(b.path().extension().string());
-                if (ta != tb)
-                    return static_cast<int>(ta) < static_cast<int>(tb);
-                return a < b;
-            });
-            break;
-        case SortMode::DATE:
-            std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
-                std::error_code e;
-                return a.last_write_time(e) > b.last_write_time(e);
-            });
-            break;
+            case SortMode::NAME:
+                std::sort(files.begin(), files.end());
+                break;
+            case SortMode::TYPE:
+                std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
+                    auto ta = ClassifyExtension(a.path().extension().string());
+                    auto tb = ClassifyExtension(b.path().extension().string());
+                    if (ta != tb)
+                        return static_cast<int>(ta) < static_cast<int>(tb);
+                    return a < b;
+                });
+                break;
+            case SortMode::DATE:
+                std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) {
+                    std::error_code e;
+                    return a.last_write_time(e) > b.last_write_time(e);
+                });
+                break;
         }
 
         if (m_typeFilter == AssetType::UNKNOWN)
@@ -1392,6 +1386,12 @@ namespace forge
             menu.addSeparator();
 
             auto fsPath = std::filesystem::path{item->data(Qt::UserRole).toString().toStdString()};
+            if (fsPath.extension() == ".hshader")
+            {
+                menu.addAction("Create Material from Shader", this,
+                               [this, fsPath] { CreateMaterialFromShader(fsPath); });
+                menu.addSeparator();
+            }
             menu.addAction("Show in Explorer", this, [this, fsPath] { ShowInExplorer(fsPath); });
         }
         else
@@ -1402,9 +1402,8 @@ namespace forge
         if (!m_clipboard.empty())
         {
             menu.addSeparator();
-            QString pasteLabel = m_clipboardIsCut
-                ? QString{"Paste (Move %1 items)\tCtrl+V"}.arg(m_clipboard.size())
-                : QString{"Paste (Copy %1 items)\tCtrl+V"}.arg(m_clipboard.size());
+            QString pasteLabel = m_clipboardIsCut ? QString{"Paste (Move %1 items)\tCtrl+V"}.arg(m_clipboard.size())
+                                                  : QString{"Paste (Copy %1 items)\tCtrl+V"}.arg(m_clipboard.size());
             menu.addAction(pasteLabel, this, &AssetBrowserPanel::PasteClipboard);
         }
 
@@ -1540,13 +1539,12 @@ namespace forge
         if (m_root.empty())
             return;
 
-        QStringList files =
-            QFileDialog::getOpenFileNames(this, "Import Assets", QDir::homePath(),
-                                          "3D Models (*.gltf *.glb *.obj);;"
-                                          "Textures (*.png *.jpg *.jpeg *.tga *.bmp *.hdr);;"
-                                          "Shaders (*.hlsl *.glsl);;"
-                                          "Audio (*.wav *.ogg *.flac *.mp3);;"
-                                          "All Files (*)");
+        QStringList files = QFileDialog::getOpenFileNames(this, "Import Assets", QDir::homePath(),
+                                                          "3D Models (*.gltf *.glb *.obj);;"
+                                                          "Textures (*.png *.jpg *.jpeg *.tga *.bmp *.hdr);;"
+                                                          "Shaders (*.hlsl *.glsl);;"
+                                                          "Audio (*.wav *.ogg *.flac *.mp3);;"
+                                                          "All Files (*)");
         if (files.isEmpty())
             return;
 
@@ -1591,8 +1589,14 @@ namespace forge
         }
 
         m_undoManager->Push(
-            [newPath] { std::error_code ec; std::filesystem::remove_all(newPath, ec); },
-            [newPath] { std::error_code ec; std::filesystem::create_directory(newPath, ec); });
+            [newPath] {
+                std::error_code ec;
+                std::filesystem::remove_all(newPath, ec);
+            },
+            [newPath] {
+                std::error_code ec;
+                std::filesystem::create_directory(newPath, ec);
+            });
         Refresh();
     }
 
@@ -1604,8 +1608,8 @@ namespace forge
         }
 
         bool ok = false;
-        auto name = QInputDialog::getText(this, "New Blueprint", "Blueprint name:",
-                                          QLineEdit::Normal, "NewBlueprint", &ok);
+        auto name =
+            QInputDialog::getText(this, "New Blueprint", "Blueprint name:", QLineEdit::Normal, "NewBlueprint", &ok);
         if (!ok || name.isEmpty())
         {
             return;
@@ -1636,6 +1640,50 @@ namespace forge
         emit assetOpenRequested(QString::fromStdString(filePath.generic_string()), AssetType::BLUEPRINT);
     }
 
+    void AssetBrowserPanel::CreateMaterialFromShader(const std::filesystem::path& shaderPath)
+    {
+        bool ok = false;
+        const QString suggested = QString::fromStdString(shaderPath.stem().string());
+        const QString name =
+            QInputDialog::getText(this, "Create Material", "Material name:", QLineEdit::Normal, suggested, &ok);
+        if (!ok || name.isEmpty())
+            return;
+
+        std::error_code ec;
+        const auto materialsDir = m_root / "materials";
+        if (!std::filesystem::exists(materialsDir, ec))
+            std::filesystem::create_directories(materialsDir, ec);
+
+        const auto matPath = materialsDir / (name.toStdString() + ".hmat");
+        if (std::filesystem::exists(matPath, ec))
+        {
+            QMessageBox::warning(this, "Error", "A material with that name already exists.");
+            return;
+        }
+
+        const auto shaderRel = std::filesystem::relative(shaderPath, m_root, ec).generic_string();
+        if (ec)
+        {
+            QMessageBox::warning(this, "Error", "Shader is not under the project assets root.");
+            return;
+        }
+
+        QString contents = QString{"[material]\nshader = \"%1\"\n"}.arg(QString::fromStdString(shaderRel));
+
+        QFile file{QString::fromStdString(matPath.generic_string())};
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        {
+            QMessageBox::warning(this, "Error", "Failed to create material file.");
+            return;
+        }
+        const QByteArray utf8 = contents.toUtf8();
+        file.write(utf8.constData(), utf8.size());
+        file.close();
+
+        Refresh();
+        emit assetOpenRequested(QString::fromStdString(matPath.generic_string()), AssetType::MATERIAL);
+    }
+
     void AssetBrowserPanel::RenamePath(const std::filesystem::path& fsPath)
     {
         bool ok = false;
@@ -1662,8 +1710,14 @@ namespace forge
         }
 
         m_undoManager->Push(
-            [newPath, fsPath] { std::error_code ec; std::filesystem::rename(newPath, fsPath, ec); },
-            [newPath, fsPath] { std::error_code ec; std::filesystem::rename(fsPath, newPath, ec); });
+            [newPath, fsPath] {
+                std::error_code ec;
+                std::filesystem::rename(newPath, fsPath, ec);
+            },
+            [newPath, fsPath] {
+                std::error_code ec;
+                std::filesystem::rename(fsPath, newPath, ec);
+            });
 
         if (m_currentDir.generic_string().find(fsPath.generic_string()) != std::string::npos)
             m_currentDir = newPath;
@@ -1674,8 +1728,7 @@ namespace forge
     void AssetBrowserPanel::DeletePath(const std::filesystem::path& fsPath)
     {
         auto answer = QMessageBox::question(
-            this, "Delete",
-            QString{"Delete '%1'?"}.arg(QString::fromStdString(fsPath.filename().string())));
+            this, "Delete", QString{"Delete '%1'?"}.arg(QString::fromStdString(fsPath.filename().string())));
         if (answer != QMessageBox::Yes)
             return;
 
@@ -1690,8 +1743,14 @@ namespace forge
         }
 
         m_undoManager->Push(
-            [fsPath, trashPath] { std::error_code ec; std::filesystem::rename(trashPath, fsPath, ec); },
-            [fsPath, trashPath] { std::error_code ec; std::filesystem::rename(fsPath, trashPath, ec); });
+            [fsPath, trashPath] {
+                std::error_code ec;
+                std::filesystem::rename(trashPath, fsPath, ec);
+            },
+            [fsPath, trashPath] {
+                std::error_code ec;
+                std::filesystem::rename(fsPath, trashPath, ec);
+            });
 
         if (m_currentDir.generic_string().find(fsPath.generic_string()) != std::string::npos)
             m_currentDir = fsPath.parent_path();
@@ -1735,8 +1794,14 @@ namespace forge
             if (!ec)
             {
                 m_undoManager->Push(
-                    [fsPath, trashPath] { std::error_code e; std::filesystem::rename(trashPath, fsPath, e); },
-                    [fsPath, trashPath] { std::error_code e; std::filesystem::rename(fsPath, trashPath, e); });
+                    [fsPath, trashPath] {
+                        std::error_code e;
+                        std::filesystem::rename(trashPath, fsPath, e);
+                    },
+                    [fsPath, trashPath] {
+                        std::error_code e;
+                        std::filesystem::rename(fsPath, trashPath, e);
+                    });
             }
         }
 
@@ -1793,8 +1858,14 @@ namespace forge
         }
 
         m_undoManager->Push(
-            [dstPath, src] { std::error_code e; std::filesystem::rename(dstPath, src, e); },
-            [dstPath, src] { std::error_code e; std::filesystem::rename(src, dstPath, e); });
+            [dstPath, src] {
+                std::error_code e;
+                std::filesystem::rename(dstPath, src, e);
+            },
+            [dstPath, src] {
+                std::error_code e;
+                std::filesystem::rename(src, dstPath, e);
+            });
         Refresh();
     }
 
@@ -1875,8 +1946,14 @@ namespace forge
                     if (!ec)
                     {
                         m_undoManager->Push(
-                            [dst, src] { std::error_code e; std::filesystem::rename(dst, src, e); },
-                            [dst, src] { std::error_code e; std::filesystem::rename(src, dst, e); });
+                            [dst, src] {
+                                std::error_code e;
+                                std::filesystem::rename(dst, src, e);
+                            },
+                            [dst, src] {
+                                std::error_code e;
+                                std::filesystem::rename(src, dst, e);
+                            });
                         auto srcHiveid = std::filesystem::path{src}.concat(".hiveid");
                         if (std::filesystem::exists(srcHiveid, ec))
                         {
@@ -1893,7 +1970,7 @@ namespace forge
                 {
                     auto stem = src.stem().string();
                     auto ext = src.extension().string();
-                    for (int i = 1; ; ++i)
+                    for (int i = 1;; ++i)
                     {
                         dst = m_currentDir / (stem + "_copy" + (i > 1 ? std::to_string(i) : "") + ext);
                         if (!std::filesystem::exists(dst))
@@ -1903,8 +1980,14 @@ namespace forge
                 CopyAssetFile(src, dst);
                 auto trashPath = TrashPathFor(dst);
                 m_undoManager->Push(
-                    [dst, trashPath] { std::error_code e; std::filesystem::rename(dst, trashPath, e); },
-                    [dst, trashPath] { std::error_code e; std::filesystem::rename(trashPath, dst, e); });
+                    [dst, trashPath] {
+                        std::error_code e;
+                        std::filesystem::rename(dst, trashPath, e);
+                    },
+                    [dst, trashPath] {
+                        std::error_code e;
+                        std::filesystem::rename(trashPath, dst, e);
+                    });
             }
         }
 
@@ -1932,7 +2015,7 @@ namespace forge
             auto dir = src.parent_path();
 
             std::filesystem::path dst;
-            for (int i = 1; ; ++i)
+            for (int i = 1;; ++i)
             {
                 dst = dir / (stem + "_copy" + (i > 1 ? std::to_string(i) : "") + ext);
                 if (!std::filesystem::exists(dst))
@@ -1942,8 +2025,14 @@ namespace forge
             CopyAssetFile(src, dst);
             auto trashPath = TrashPathFor(dst);
             m_undoManager->Push(
-                [dst, trashPath] { std::error_code e; std::filesystem::rename(dst, trashPath, e); },
-                [dst, trashPath] { std::error_code e; std::filesystem::rename(trashPath, dst, e); });
+                [dst, trashPath] {
+                    std::error_code e;
+                    std::filesystem::rename(dst, trashPath, e);
+                },
+                [dst, trashPath] {
+                    std::error_code e;
+                    std::filesystem::rename(trashPath, dst, e);
+                });
         }
 
         Refresh();

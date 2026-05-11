@@ -171,6 +171,7 @@ namespace brood::launcher
         std::filesystem::path m_projectPath{};
         LauncherRequestedMode m_requestedMode{LauncherRequestedMode::AUTO};
         bool m_exitAfterSetup{false};
+        bool m_useRenderThread{false};
     };
 
 } // namespace brood::launcher

@@ -307,6 +307,8 @@ if(HIVE_BUILD_SHARED)
         target_link_libraries(hive_engine PRIVATE
             Diligent-GraphicsEngineVk-static
             Diligent-GraphicsEngine
+            Diligent-GraphicsTools
+            Diligent-Archiver-static
             Diligent-BuildSettings
         )
     endif()

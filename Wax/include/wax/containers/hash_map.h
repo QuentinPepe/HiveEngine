@@ -214,28 +214,19 @@ namespace wax
 
         bool Insert(const K& key, const V& value)
         {
-            if (ShouldRehash())
-            {
-                Rehash(m_capacity * 2);
-            }
+            EnsureCapacity();
             return InsertInternal(key, value);
         }
 
         bool Insert(const K& key, V&& value)
         {
-            if (ShouldRehash())
-            {
-                Rehash(m_capacity * 2);
-            }
+            EnsureCapacity();
             return InsertInternalMove(key, static_cast<V&&>(value));
         }
 
         template <typename... Args> bool Emplace(const K& key, Args&&... args)
         {
-            if (ShouldRehash())
-            {
-                Rehash(m_capacity * 2);
-            }
+            EnsureCapacity();
 
             const size_t hash = Hash{}(key);
             size_t index = hash & (m_capacity - 1);
@@ -468,6 +459,26 @@ namespace wax
         [[nodiscard]] bool ShouldRehash() const noexcept
         {
             return m_count >= static_cast<size_t>(static_cast<float>(m_capacity) * kMaxLoadFactor);
+        }
+
+        void EnsureCapacity()
+        {
+            if (m_capacity == 0)
+            {
+                m_capacity = 16;
+                m_buckets = static_cast<Bucket*>(m_allocator.Allocate(sizeof(Bucket) * m_capacity, alignof(Bucket)));
+                hive::Assert(m_buckets != nullptr, "Failed to allocate HashMap buckets");
+                for (size_t i = 0; i < m_capacity; ++i)
+                {
+                    m_buckets[i].m_state = kEmpty;
+                    m_buckets[i].m_psl = 0;
+                }
+                return;
+            }
+            if (ShouldRehash())
+            {
+                Rehash(m_capacity * 2);
+            }
         }
 
         void Rehash(size_t newCapacity)

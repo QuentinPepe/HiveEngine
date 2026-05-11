@@ -37,6 +37,10 @@ namespace nectar
             return *m_alloc;
         }
 
+        /// Virtual path of the asset being imported (e.g. "shaders/wave.vs.hlsl").
+        /// Empty if the asset has been removed from the database mid-import.
+        [[nodiscard]] wax::StringView SourcePath() const;
+
     private:
         void DeclareDep(AssetId dep, DepKind kind);
 

@@ -263,7 +263,7 @@ if(NOT _swarm_using_prebuilt_diligent)
     set(DILIGENT_NO_OPENGL ON CACHE BOOL "" FORCE)
     set(DILIGENT_NO_METAL ON CACHE BOOL "" FORCE)
     set(DILIGENT_NO_WEBGPU ON CACHE BOOL "" FORCE)
-    set(DILIGENT_NO_ARCHIVER ON CACHE BOOL "" FORCE)
+    set(DILIGENT_NO_ARCHIVER OFF CACHE BOOL "" FORCE)
     set(DILIGENT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(DILIGENT_INSTALL_CORE OFF CACHE BOOL "" FORCE)
     # clang-cl rejects /GL — strip it from Diligent's MSVC release defaults.
@@ -290,8 +290,36 @@ target_sources(Swarm
         src/platform/diligent/diligent_swarm_vulkan.cpp
         src/platform/diligent/diligent_mesh.cpp
         src/platform/diligent/diligent_material.cpp
+        src/platform/diligent/diligent_texture.cpp
+        src/platform/diligent/diligent_shader_library.cpp
         src/platform/diligent/diligent_scene.cpp
 )
+
+# Engine shaders. Copied next to the Swarm binary at build time. Path is resolved
+# at runtime via swarm::ShaderLibrary::AddSearchPath.
+set(_swarm_engine_shader_files
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/common.hlsli
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.vs.hlsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.ps.hlsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.hshader
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.hmat
+)
+set(_swarm_shader_output_dir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/shaders/engine)
+set(_swarm_shader_stamp ${CMAKE_CURRENT_BINARY_DIR}/swarm_shader_stage.stamp)
+add_custom_command(
+    OUTPUT ${_swarm_shader_stamp}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_swarm_shader_output_dir}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_swarm_engine_shader_files} ${_swarm_shader_output_dir}
+    COMMAND ${CMAKE_COMMAND} -E touch ${_swarm_shader_stamp}
+    DEPENDS ${_swarm_engine_shader_files}
+    COMMENT "Swarm: staging engine shaders -> ${_swarm_shader_output_dir}"
+    VERBATIM
+)
+add_custom_target(SwarmStageEngineShaders ALL DEPENDS ${_swarm_shader_stamp})
+add_dependencies(Swarm SwarmStageEngineShaders)
+source_group("Shaders" FILES ${_swarm_engine_shader_files})
+target_sources(Swarm PRIVATE ${_swarm_engine_shader_files})
+set_source_files_properties(${_swarm_engine_shader_files} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 if(UNIX)
     target_sources(Swarm PRIVATE src/platform/diligent/diligent_swarm_linux_vulkan.cpp)
@@ -316,6 +344,7 @@ target_include_directories(Swarm
         ${_swarm_diligent_source_dir}/Common/interface
         ${_swarm_diligent_source_dir}/Graphics/GraphicsEngineVulkan/interface
         ${_swarm_diligent_source_dir}/Graphics/GraphicsTools/interface
+        ${_swarm_diligent_source_dir}/Graphics/Archiver/interface
 )
 
 target_precompile_headers(Swarm
@@ -331,6 +360,8 @@ target_link_libraries(Swarm
         Terra
         Diligent-GraphicsEngineVk-static
         Diligent-GraphicsEngine
+        Diligent-GraphicsTools
+        Diligent-Archiver-static
         Diligent-BuildSettings
 )
 

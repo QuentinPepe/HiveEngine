@@ -292,8 +292,6 @@ namespace nectar
                 hive::LogInfo(LOG_HOTRELOAD, "Auto-registered: {}", vfsPath.CStr());
             }
 
-            // Skip reimport if content hash unchanged (avoids noise after glTF import)
-            // Always import if content hash is invalid (first import, never went through pipeline)
             if (m_vfs && record->m_contentHash.IsValid())
             {
                 auto sourceData = m_vfs->ReadSync(lookupPath);
