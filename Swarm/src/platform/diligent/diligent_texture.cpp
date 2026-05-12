@@ -10,6 +10,7 @@
 
 #include <GraphicsTypes.h>
 #include <RefCntAutoPtr.hpp>
+#include <diligent_bindless.h>
 #include <diligent_internal.h>
 
 namespace swarm
@@ -93,5 +94,20 @@ namespace swarm
             texture->m_texture->Release();
         auto& allocator = SwarmModule::GetInstance().GetAllocator();
         comb::Delete(allocator, texture);
+    }
+
+    TextureHandle RegisterTexture(RenderContext* renderContext, Texture* texture)
+    {
+        return renderContext->m_bindlessHeap->Register(texture);
+    }
+
+    void UnregisterTexture(RenderContext* renderContext, TextureHandle handle)
+    {
+        renderContext->m_bindlessHeap->Unregister(handle);
+    }
+
+    void SetDefaultBindlessTexture(RenderContext* renderContext, uint32_t slot, Texture* texture)
+    {
+        renderContext->m_bindlessHeap->SetDefault(slot, texture);
     }
 } // namespace swarm

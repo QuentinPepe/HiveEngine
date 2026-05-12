@@ -45,7 +45,7 @@ namespace swarm
     {
         return nullptr;
     }
-    void DestroyMaterial(Material* /*material*/)
+    void DestroyMaterial(RenderContext* /*ctx*/, Material* /*material*/)
     {
     }
 
@@ -117,6 +117,17 @@ namespace swarm
     {
     }
     void EndViewportRT(RenderContext* /*ctx*/, ViewportRT* /*rt*/)
+    {
+    }
+
+    TextureHandle RegisterTexture(RenderContext* /*ctx*/, Texture* /*texture*/)
+    {
+        return TextureHandle{};
+    }
+    void UnregisterTexture(RenderContext* /*ctx*/, TextureHandle /*handle*/)
+    {
+    }
+    void SetDefaultBindlessTexture(RenderContext* /*ctx*/, uint32_t /*slot*/, Texture* /*texture*/)
     {
     }
 } // namespace swarm

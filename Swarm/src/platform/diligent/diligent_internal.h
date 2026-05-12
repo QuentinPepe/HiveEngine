@@ -28,8 +28,8 @@ namespace swarm
     {
         Diligent::IPipelineState* m_pipelineState{nullptr};
         Diligent::IShaderResourceBinding* m_resourceBinding{nullptr};
-        Diligent::IBuffer* m_materialParamsBuffer{nullptr};
         VertexDomain m_domain{VertexDomain::STATIC_MESH};
+        uint32_t m_materialIndex{0};
     };
 
     struct Texture
@@ -55,8 +55,10 @@ namespace swarm
     {
         hive::math::Mat4 m_world;
         hive::math::Mat4 m_worldInvTranspose;
+        uint32_t m_materialIndex;
+        uint32_t m_pad[3];
     };
-    static_assert(sizeof(ObjectConstantsGpu) == 128, "ObjectConstantsGpu must be 128 bytes");
+    static_assert(sizeof(ObjectConstantsGpu) == 144, "ObjectConstantsGpu must be 144 bytes");
 
     struct TimeConstantsGpu
     {

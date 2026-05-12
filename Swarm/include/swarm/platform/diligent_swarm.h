@@ -8,6 +8,8 @@
 namespace swarm
 {
     class ShaderLibrary;
+    class BindlessHeap;
+    class MaterialsBuffer;
 
     inline constexpr uint32_t kMaxDeferredContexts = 16;
 
@@ -50,5 +52,8 @@ namespace swarm
         // destroyed in ShutdownRenderContext. Lives in RenderContext because it owns
         // device-affine state (cache blob, source factory).
         ShaderLibrary* m_shaderLibrary{nullptr};
+
+        BindlessHeap* m_bindlessHeap{nullptr};
+        MaterialsBuffer* m_materialsBuffer{nullptr};
     };
 } // namespace swarm

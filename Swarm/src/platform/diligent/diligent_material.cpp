@@ -17,7 +17,9 @@
 #include <ShaderMacroHelper.hpp>
 #include <ShaderSourceFactoryUtils.h>
 #include <cstring>
+#include <diligent_bindless.h>
 #include <diligent_internal.h>
+#include <diligent_materials_buffer.h>
 #include <diligent_shader_library.h>
 
 namespace swarm
@@ -225,9 +227,25 @@ namespace swarm
 
         psoInfo.PSODesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 
+        // The pixel shader picks one of two binding modes: bindless if it declares the
+        // runtime array `g_textures`, otherwise one-texture-per-variable as before.
+        bool usesBindless = false;
+        if (pixelShader)
+        {
+            const Uint32 resCount = pixelShader->GetResourceCount();
+            for (Uint32 i = 0; i < resCount; ++i)
+            {
+                ShaderResourceDesc rd{};
+                pixelShader->GetResourceDesc(i, rd);
+                if (rd.Name != nullptr && std::strcmp(rd.Name, "g_textures") == 0)
+                {
+                    usesBindless = true;
+                    break;
+                }
+            }
+        }
+
         wax::Vector<ShaderResourceVariableDesc> mutableVars{SwarmModule::GetInstance().GetAllocator()};
-        mutableVars.PushBack(
-            {SHADER_TYPE_VERTEX | SHADER_TYPE_PIXEL, "MaterialParams", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE});
 
         wax::Vector<ImmutableSamplerDesc> immutableSamplers{SwarmModule::GetInstance().GetAllocator()};
 
@@ -238,23 +256,39 @@ namespace swarm
             return a == SamplerAddress::CLAMP ? TEXTURE_ADDRESS_CLAMP : TEXTURE_ADDRESS_WRAP;
         };
 
-        for (uint32_t t = 0; t < desc.m_textureCount; ++t)
+        if (usesBindless)
         {
-            const MaterialTextureBinding& tb = desc.m_textures[t];
-            if (tb.m_name == nullptr || tb.m_texture == nullptr)
-                continue;
-            mutableVars.PushBack({SHADER_TYPE_PIXEL, tb.m_name, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE});
+            mutableVars.PushBack({SHADER_TYPE_PIXEL, "g_textures", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE});
 
-            Diligent::SamplerDesc sd;
-            const FILTER_TYPE filter = translateFilter(tb.m_sampler.m_filter);
-            sd.MinFilter = filter;
-            sd.MagFilter = filter;
-            sd.MipFilter = tb.m_sampler.m_mipmaps ? filter : FILTER_TYPE_POINT;
-            const TEXTURE_ADDRESS_MODE addr = translateAddress(tb.m_sampler.m_address);
-            sd.AddressU = addr;
-            sd.AddressV = addr;
-            sd.AddressW = addr;
-            immutableSamplers.PushBack(ImmutableSamplerDesc{SHADER_TYPE_PIXEL, tb.m_name, sd});
+            Diligent::SamplerDesc bindlessSampler;
+            bindlessSampler.MinFilter = FILTER_TYPE_LINEAR;
+            bindlessSampler.MagFilter = FILTER_TYPE_LINEAR;
+            bindlessSampler.MipFilter = FILTER_TYPE_LINEAR;
+            bindlessSampler.AddressU = TEXTURE_ADDRESS_WRAP;
+            bindlessSampler.AddressV = TEXTURE_ADDRESS_WRAP;
+            bindlessSampler.AddressW = TEXTURE_ADDRESS_WRAP;
+            immutableSamplers.PushBack(ImmutableSamplerDesc{SHADER_TYPE_PIXEL, "g_textures", bindlessSampler});
+        }
+        else
+        {
+            for (uint32_t t = 0; t < desc.m_textureCount; ++t)
+            {
+                const MaterialTextureBinding& tb = desc.m_textures[t];
+                if (tb.m_name == nullptr || tb.m_texture == nullptr)
+                    continue;
+                mutableVars.PushBack({SHADER_TYPE_PIXEL, tb.m_name, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE});
+
+                Diligent::SamplerDesc sd;
+                const FILTER_TYPE filter = translateFilter(tb.m_sampler.m_filter);
+                sd.MinFilter = filter;
+                sd.MagFilter = filter;
+                sd.MipFilter = tb.m_sampler.m_mipmaps ? filter : FILTER_TYPE_POINT;
+                const TEXTURE_ADDRESS_MODE addr = translateAddress(tb.m_sampler.m_address);
+                sd.AddressU = addr;
+                sd.AddressV = addr;
+                sd.AddressW = addr;
+                immutableSamplers.PushBack(ImmutableSamplerDesc{SHADER_TYPE_PIXEL, tb.m_name, sd});
+            }
         }
 
         psoInfo.PSODesc.ResourceLayout.Variables = mutableVars.Data();
@@ -278,6 +312,10 @@ namespace swarm
         {
             var->Set(context->m_objectConstantBuffer);
         }
+        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_PIXEL, "ObjectConstants"))
+        {
+            var->Set(context->m_objectConstantBuffer);
+        }
         if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_VERTEX, "TimeConstants"))
         {
             var->Set(context->m_timeConstantBuffer);
@@ -290,6 +328,10 @@ namespace swarm
         {
             var->Set(context->m_timeConstantBuffer);
         }
+        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_PIXEL, "g_materials"))
+        {
+            var->Set(context->m_materialsBuffer->ShaderView());
+        }
 
         RefCntAutoPtr<IShaderResourceBinding> srb;
         pipelineState->CreateShaderResourceBinding(&srb, true);
@@ -299,104 +341,109 @@ namespace swarm
             return nullptr;
         }
 
-        // Cbuffer name shared across VS/PS; whichever stage declares it first wins (same layout).
-        RefCntAutoPtr<IBuffer> materialParamsBuffer;
-        auto buildMaterialParams = [&](IShader* shader) -> bool {
-            if (shader == nullptr)
-                return false;
-            const Uint32 resCount = shader->GetResourceCount();
-            for (Uint32 i = 0; i < resCount; ++i)
-            {
-                ShaderResourceDesc resDesc{};
-                shader->GetResourceDesc(i, resDesc);
-                if (resDesc.Type != SHADER_RESOURCE_TYPE_CONSTANT_BUFFER)
-                    continue;
-                if (resDesc.Name == nullptr || std::strcmp(resDesc.Name, "MaterialParams") != 0)
-                    continue;
-
-                const ShaderCodeBufferDesc* cbDesc = shader->GetConstantBufferDesc(i);
-                if (cbDesc == nullptr || cbDesc->Size == 0)
-                    return false;
-
-                BufferDesc bufferDesc;
-                bufferDesc.Name = "MaterialParams";
-                bufferDesc.Size = cbDesc->Size;
-                bufferDesc.Usage = USAGE_DEFAULT;
-                bufferDesc.BindFlags = BIND_UNIFORM_BUFFER;
-
-                wax::Vector<uint8_t> staging{SwarmModule::GetInstance().GetAllocator()};
-                staging.Resize(cbDesc->Size);
-                std::memset(staging.Data(), 0, cbDesc->Size);
-
-                for (Uint32 v = 0; v < cbDesc->NumVariables; ++v)
-                {
-                    const ShaderCodeVariableDesc& var = cbDesc->pVariables[v];
-                    if (var.Name == nullptr)
-                        continue;
-                    for (uint32_t p = 0; p < desc.m_paramCount; ++p)
-                    {
-                        const MaterialParamBinding& binding = desc.m_params[p];
-                        if (binding.m_name == nullptr || binding.m_data == nullptr)
-                            continue;
-                        if (std::strcmp(var.Name, binding.m_name) != 0)
-                            continue;
-                        if (var.Offset + binding.m_size > cbDesc->Size)
-                            break;
-                        std::memcpy(staging.Data() + var.Offset, binding.m_data, binding.m_size);
-                        break;
-                    }
-                }
-
-                BufferData initData;
-                initData.pData = staging.Data();
-                initData.DataSize = cbDesc->Size;
-                context->m_device->CreateBuffer(bufferDesc, &initData, &materialParamsBuffer);
-                return materialParamsBuffer != nullptr;
-            }
-            return false;
+        // Hardcoded standard material struct layout. Mirrors MaterialParams in standard.ps.hlsl
+        // and MaterialParamsGpu in diligent_materials_buffer.h. Other shader programs would
+        // register their own layouts here when they ship.
+        struct StandardField
+        {
+            const char* m_name;
+            uint32_t m_offset;
+            uint32_t m_size;
+        };
+        static constexpr StandardField kStandardLayout[] = {
+            {"base_color_factor", offsetof(MaterialParamsGpu, m_baseColorFactor), 16},
+            {"metallic_factor", offsetof(MaterialParamsGpu, m_metallicFactor), 4},
+            {"roughness_factor", offsetof(MaterialParamsGpu, m_roughnessFactor), 4},
+            {"emissive_factor", offsetof(MaterialParamsGpu, m_emissiveFactor), 16},
+            {"albedo_map_index", offsetof(MaterialParamsGpu, m_albedoMapIndex), 4},
+            {"normal_map_index", offsetof(MaterialParamsGpu, m_normalMapIndex), 4},
+            {"metallic_roughness_map_index", offsetof(MaterialParamsGpu, m_metallicRoughnessMapIndex), 4},
         };
 
-        bool hasMaterialParams = buildMaterialParams(vertexShader);
-        if (!hasMaterialParams)
-            hasMaterialParams = buildMaterialParams(pixelShader);
+        MaterialParamsGpu params{};
+        params.m_baseColorFactor[0] = 1.f;
+        params.m_baseColorFactor[1] = 1.f;
+        params.m_baseColorFactor[2] = 1.f;
+        params.m_baseColorFactor[3] = 1.f;
+        params.m_metallicFactor = 0.f;
+        params.m_roughnessFactor = 1.f;
+        params.m_albedoMapIndex = kBindlessSlotDefaultWhite;
+        params.m_normalMapIndex = kBindlessSlotDefaultNormal;
+        params.m_metallicRoughnessMapIndex = kBindlessSlotDefaultWhite;
 
-        if (hasMaterialParams)
+        for (uint32_t p = 0; p < desc.m_paramCount; ++p)
         {
-            if (auto* var = srb->GetVariableByName(SHADER_TYPE_VERTEX, "MaterialParams"))
-                var->Set(materialParamsBuffer);
-            if (auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, "MaterialParams"))
-                var->Set(materialParamsBuffer);
+            const MaterialParamBinding& binding = desc.m_params[p];
+            if (binding.m_name == nullptr || binding.m_data == nullptr)
+                continue;
+            for (const StandardField& f : kStandardLayout)
+            {
+                if (std::strcmp(f.m_name, binding.m_name) != 0)
+                    continue;
+                const uint32_t copySize = (binding.m_size < f.m_size) ? binding.m_size : f.m_size;
+                std::memcpy(reinterpret_cast<uint8_t*>(&params) + f.m_offset, binding.m_data, copySize);
+                break;
+            }
         }
 
-        for (uint32_t t = 0; t < desc.m_textureCount; ++t)
+        const uint32_t materialIndex = context->m_materialsBuffer->Allocate();
+        context->m_materialsBuffer->Write(context->m_context, materialIndex, &params, sizeof(params));
+
+        if (usesBindless)
         {
-            const MaterialTextureBinding& tb = desc.m_textures[t];
-            if (tb.m_name == nullptr || tb.m_texture == nullptr || tb.m_texture->m_shaderView == nullptr)
-                continue;
-            if (auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, tb.m_name))
-                var->Set(tb.m_texture->m_shaderView);
+            BindlessHeap* heap = context->m_bindlessHeap;
+            if (auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, "g_textures"))
+            {
+                // Every slot must resolve to a non-null view for validation. Empty slots fall
+                // back to the engine default white texture; the shader only samples slots its
+                // material actually populated.
+                Texture* fallback = heap->Lookup(TextureHandle{kBindlessSlotDefaultWhite});
+                ITextureView* fallbackView =
+                    (fallback != nullptr) ? fallback->m_shaderView : nullptr;
+
+                const uint32_t capacity = heap->Capacity();
+                wax::Vector<IDeviceObject*> views{SwarmModule::GetInstance().GetAllocator()};
+                views.Resize(capacity);
+                for (uint32_t i = 0; i < capacity; ++i)
+                {
+                    Texture* tex = heap->Lookup(TextureHandle{i});
+                    ITextureView* view =
+                        (tex != nullptr && tex->m_shaderView != nullptr) ? tex->m_shaderView : fallbackView;
+                    views[i] = static_cast<IDeviceObject*>(view);
+                }
+                var->SetArray(views.Data(), 0, capacity, SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE);
+            }
+        }
+        else
+        {
+            for (uint32_t t = 0; t < desc.m_textureCount; ++t)
+            {
+                const MaterialTextureBinding& tb = desc.m_textures[t];
+                if (tb.m_name == nullptr || tb.m_texture == nullptr || tb.m_texture->m_shaderView == nullptr)
+                    continue;
+                if (auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, tb.m_name))
+                    var->Set(tb.m_texture->m_shaderView);
+            }
         }
 
         auto& allocator = SwarmModule::GetInstance().GetAllocator();
         auto* material = comb::New<Material>(allocator);
         material->m_pipelineState = pipelineState.Detach();
         material->m_resourceBinding = srb.Detach();
-        material->m_materialParamsBuffer = materialParamsBuffer ? materialParamsBuffer.Detach() : nullptr;
+        material->m_materialIndex = materialIndex;
         material->m_domain = desc.m_domain;
         return material;
     }
 
-    void DestroyMaterial(Material* material)
+    void DestroyMaterial(RenderContext* context, Material* material)
     {
         if (material == nullptr)
         {
             return;
         }
 
-        if (material->m_materialParamsBuffer != nullptr)
-        {
-            material->m_materialParamsBuffer->Release();
-        }
+        context->m_materialsBuffer->Free(material->m_materialIndex);
+
         if (material->m_resourceBinding != nullptr)
         {
             material->m_resourceBinding->Release();

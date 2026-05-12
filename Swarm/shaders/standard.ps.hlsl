@@ -1,20 +1,21 @@
 #include "common.hlsli"
 
-cbuffer MaterialParams
+struct MaterialParams
 {
     float4 base_color_factor;
     float  metallic_factor;
     float  roughness_factor;
     float2 _pad0;
     float4 emissive_factor;
+    uint   albedo_map_index;
+    uint   normal_map_index;
+    uint   metallic_roughness_map_index;
+    uint   _pad_indices;
 };
 
-Texture2D    albedo_map;
-SamplerState albedo_map_sampler;
-Texture2D    normal_map;
-SamplerState normal_map_sampler;
-Texture2D    metallic_roughness_map;
-SamplerState metallic_roughness_map_sampler;
+StructuredBuffer<MaterialParams> g_materials       : register(t0, space2);
+Texture2D                        g_textures[8192]  : register(t0, space1);
+SamplerState                     g_textures_sampler : register(s0, space1);
 
 struct PsOutput
 {
@@ -48,9 +49,14 @@ float GeometrySmith(float ndotv, float ndotl, float roughness)
     return GeometrySchlickGGX(ndotv, roughness) * GeometrySchlickGGX(ndotl, roughness);
 }
 
-float3 ApplyNormalMap(float3 N, float3 posWS, float2 uv)
+float4 SampleBindless(uint slot, float2 uv)
 {
-    float3 sampledN = normal_map.Sample(normal_map_sampler, uv).xyz * 2.0 - 1.0;
+    return g_textures[slot].Sample(g_textures_sampler, uv);
+}
+
+float3 ApplyNormalMap(uint slot, float3 N, float3 posWS, float2 uv)
+{
+    float3 sampledN = SampleBindless(slot, uv).xyz * 2.0 - 1.0;
 
     float3 dp1 = ddx(posWS);
     float3 dp2 = ddy(posWS);
@@ -66,15 +72,17 @@ float3 ApplyNormalMap(float3 N, float3 posWS, float2 uv)
 
 void main(in StandardVsToPs pin, out PsOutput pout)
 {
-    float4 albedoTex = albedo_map.Sample(albedo_map_sampler, pin.uv);
-    float3 albedo = base_color_factor.rgb * albedoTex.rgb * pin.color.rgb;
-    float alpha = base_color_factor.a * albedoTex.a;
+    MaterialParams mat = g_materials[g_materialIndex];
 
-    float4 mrTex = metallic_roughness_map.Sample(metallic_roughness_map_sampler, pin.uv);
-    float metallic = saturate(metallic_factor * mrTex.b);
-    float roughness = max(saturate(roughness_factor * mrTex.g), 0.04);
+    float4 albedoTex = SampleBindless(mat.albedo_map_index, pin.uv);
+    float3 albedo = mat.base_color_factor.rgb * albedoTex.rgb * pin.color.rgb;
+    float alpha = mat.base_color_factor.a * albedoTex.a;
 
-    float3 N = ApplyNormalMap(normalize(pin.normalWS), pin.posWS, pin.uv);
+    float4 mrTex = SampleBindless(mat.metallic_roughness_map_index, pin.uv);
+    float metallic = saturate(mat.metallic_factor * mrTex.b);
+    float roughness = max(saturate(mat.roughness_factor * mrTex.g), 0.04);
+
+    float3 N = ApplyNormalMap(mat.normal_map_index, normalize(pin.normalWS), pin.posWS, pin.uv);
     float3 V = normalize(g_eyeWorld.xyz - pin.posWS);
     float3 L = normalize(-g_sunDirection.xyz);
     float3 H = normalize(V + L);
@@ -95,7 +103,7 @@ void main(in StandardVsToPs pin, out PsOutput pout)
 
     float3 direct = (diffuse + spec) * g_sunColor.rgb * ndotl;
     float3 ambient = albedo * g_ambient.rgb;
-    float3 emissive = emissive_factor.rgb;
+    float3 emissive = mat.emissive_factor.rgb;
 
     pout.color = float4(direct + ambient + emissive, alpha);
 }

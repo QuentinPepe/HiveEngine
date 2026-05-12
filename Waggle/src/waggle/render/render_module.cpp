@@ -37,10 +37,20 @@ namespace waggle
             return allocator.Get();
         }
 
-        comb::DefaultAllocator& GetMeshLoadAllocator()
+        // Mesh load buffers are transient: alloc → CPU parse → GPU upload → free.
+        // We size the allocator per call to avoid keeping hundreds of MB reserved
+        // between loads, and to accommodate arbitrarily large single meshes.
+        //
+        // The Buddy allocator rounds each allocation up to a power of two. The
+        // single largest allocation (the mesh blob) consumes a power-of-two
+        // sub-block; passing exactly blobSize for the capacity would force the
+        // whole block to be eaten by that one allocation, leaving nothing for
+        // the MeshAsset header and submesh vector. Doubling guarantees room.
+        size_t RoundUpMeshAllocatorCapacity(size_t blobSize) noexcept
         {
-            static comb::ModuleAllocator allocator{"Waggle.MeshLoad", 64 * 1024 * 1024};
-            return allocator.Get();
+            constexpr size_t kFloor = 64u * 1024u;
+            const size_t doubled = blobSize > 0 ? blobSize * 2u : kFloor;
+            return doubled < kFloor ? kFloor : doubled;
         }
 
         comb::DefaultAllocator& GetTextureLoadAllocator()
@@ -84,6 +94,9 @@ namespace waggle
         constexpr uint8_t kFlatNormalPixel[4]{128, 128, 255, 255};
         m_defaultWhite = BuildSolidTexture(kWhitePixel, "Default White");
         m_defaultNormal = BuildSolidTexture(kFlatNormalPixel, "Default Normal");
+
+        swarm::SetDefaultBindlessTexture(m_context, swarm::kBindlessSlotDefaultWhite, m_defaultWhite);
+        swarm::SetDefaultBindlessTexture(m_context, swarm::kBindlessSlotDefaultNormal, m_defaultNormal);
     }
 
     RenderModule::~RenderModule()
@@ -91,7 +104,7 @@ namespace waggle
         for (auto it = m_materialPathCache.begin(); it != m_materialPathCache.end(); ++it)
         {
             if (it.Value() != nullptr)
-                swarm::DestroyMaterial(it.Value());
+                swarm::DestroyMaterial(m_context, it.Value());
         }
         m_materialPathCache.Clear();
 
@@ -183,7 +196,7 @@ namespace waggle
         if (auto* hit = m_materialPathCache.Find(key))
         {
             if (*hit != nullptr)
-                swarm::DestroyMaterial(*hit);
+                swarm::DestroyMaterial(m_context, *hit);
             m_materialPathCache.Remove(key);
         }
     }
@@ -222,7 +235,8 @@ namespace waggle
         if (blob.IsEmpty())
             return nullptr;
 
-        auto& allocator = GetMeshLoadAllocator();
+        comb::ModuleAllocator allocatorOwner{"Waggle.MeshLoad", RoundUpMeshAllocatorCapacity(blob.Size())};
+        auto& allocator = allocatorOwner.Get();
         nectar::MeshAssetLoader loader;
         nectar::MeshAsset* asset = loader.Load(wax::ByteSpan{blob.Data(), blob.Size()}, allocator);
         if (asset == nullptr)
@@ -528,15 +542,6 @@ namespace waggle
             paramNames.PushBack(static_cast<wax::String&&>(key));
             paramOffsets.PushBack(blobStart);
         }
-        for (size_t i = 0; i < paramNames.Size(); ++i)
-        {
-            swarm::MaterialParamBinding binding{};
-            binding.m_name = paramNames[i].CStr();
-            binding.m_data = paramBlob.Data() + paramOffsets[i];
-            const size_t end = (i + 1 < paramOffsets.Size()) ? paramOffsets[i + 1] : paramBlob.Size();
-            binding.m_size = static_cast<uint32_t>(end - paramOffsets[i]);
-            paramBindings.PushBack(binding);
-        }
 
         wax::Vector<swarm::MaterialTextureBinding> textureBindings{alloc};
         textureBindings.Reserve(prog->m_textureAnnotations.Size());
@@ -554,20 +559,50 @@ namespace waggle
                         texture = AcquireTexture(*texId, record->m_path.View(), project);
                 }
             }
-            if (texture == nullptr)
+            const bool isNormal = annotation.m_name.View().Contains(wax::StringView{"normal"});
+            const uint32_t fallbackSlot =
+                isNormal ? swarm::kBindlessSlotDefaultNormal : swarm::kBindlessSlotDefaultWhite;
+
+            swarm::TextureHandle handle{fallbackSlot};
+            if (texture != nullptr)
             {
-                texture =
-                    annotation.m_name.View().Contains(wax::StringView{"normal"}) ? m_defaultNormal : m_defaultWhite;
+                handle = swarm::RegisterTexture(m_context, texture);
+                if (!handle.IsValid())
+                    handle = swarm::TextureHandle{fallbackSlot};
             }
-            if (texture == nullptr)
-                continue;
-            swarm::MaterialTextureBinding tb{};
-            tb.m_name = annotation.m_name.CStr();
-            tb.m_texture = texture;
-            tb.m_sampler.m_filter = swarm::SamplerFilter::LINEAR;
-            tb.m_sampler.m_address = swarm::SamplerAddress::WRAP;
-            tb.m_sampler.m_mipmaps = true;
-            textureBindings.PushBack(tb);
+            else
+            {
+                texture = isNormal ? m_defaultNormal : m_defaultWhite;
+            }
+
+            if (texture != nullptr)
+            {
+                swarm::MaterialTextureBinding tb{};
+                tb.m_name = annotation.m_name.CStr();
+                tb.m_texture = texture;
+                tb.m_sampler.m_filter = swarm::SamplerFilter::LINEAR;
+                tb.m_sampler.m_address = swarm::SamplerAddress::WRAP;
+                tb.m_sampler.m_mipmaps = true;
+                textureBindings.PushBack(tb);
+            }
+
+            wax::String indexName{alloc, annotation.m_name.View()};
+            indexName.Append(wax::StringView{"_index"});
+            const size_t blobStart = paramBlob.Size();
+            paramBlob.Resize(blobStart + sizeof(uint32_t));
+            std::memcpy(paramBlob.Data() + blobStart, &handle.m_index, sizeof(uint32_t));
+            paramNames.PushBack(static_cast<wax::String&&>(indexName));
+            paramOffsets.PushBack(blobStart);
+        }
+
+        for (size_t i = 0; i < paramNames.Size(); ++i)
+        {
+            swarm::MaterialParamBinding binding{};
+            binding.m_name = paramNames[i].CStr();
+            binding.m_data = paramBlob.Data() + paramOffsets[i];
+            const size_t end = (i + 1 < paramOffsets.Size()) ? paramOffsets[i + 1] : paramBlob.Size();
+            binding.m_size = static_cast<uint32_t>(end - paramOffsets[i]);
+            paramBindings.PushBack(binding);
         }
 
         swarm::MaterialDesc desc{};

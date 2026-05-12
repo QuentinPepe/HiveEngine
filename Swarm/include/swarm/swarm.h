@@ -132,6 +132,26 @@ namespace swarm
     HIVE_API Texture* CreateTexture(RenderContext* renderContext, const TextureDesc& desc);
     HIVE_API void DestroyTexture(Texture* texture);
 
+    // Slot 0 is reserved as "invalid" — shaders fall back to default white.
+    struct TextureHandle
+    {
+        uint32_t m_index{0};
+
+        [[nodiscard]] bool IsValid() const noexcept
+        {
+            return m_index != 0;
+        }
+    };
+
+    inline constexpr uint32_t kBindlessSlotInvalid = 0;
+    inline constexpr uint32_t kBindlessSlotDefaultWhite = 1;
+    inline constexpr uint32_t kBindlessSlotDefaultNormal = 2;
+    inline constexpr uint32_t kBindlessHeapCapacity = 8192;
+
+    HIVE_API TextureHandle RegisterTexture(RenderContext* renderContext, Texture* texture);
+    HIVE_API void UnregisterTexture(RenderContext* renderContext, TextureHandle handle);
+    HIVE_API void SetDefaultBindlessTexture(RenderContext* renderContext, uint32_t slot, Texture* texture);
+
     struct MaterialTextureBinding
     {
         const char* m_name{nullptr};
@@ -211,7 +231,7 @@ namespace swarm
     };
 
     HIVE_API Material* CreateMaterial(RenderContext* renderContext, const MaterialDesc& desc);
-    HIVE_API void DestroyMaterial(Material* material);
+    HIVE_API void DestroyMaterial(RenderContext* renderContext, Material* material);
 
     // Hot-reload entry point. Drained by the render thread at the next BeginFrame.
     HIVE_API void RequestShaderReload(RenderContext* renderContext);

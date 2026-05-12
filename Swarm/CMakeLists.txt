@@ -291,6 +291,8 @@ target_sources(Swarm
         src/platform/diligent/diligent_mesh.cpp
         src/platform/diligent/diligent_material.cpp
         src/platform/diligent/diligent_texture.cpp
+        src/platform/diligent/diligent_bindless.cpp
+        src/platform/diligent/diligent_materials_buffer.cpp
         src/platform/diligent/diligent_shader_library.cpp
         src/platform/diligent/diligent_scene.cpp
 )

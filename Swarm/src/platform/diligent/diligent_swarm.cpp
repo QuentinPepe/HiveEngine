@@ -11,7 +11,9 @@
 
 #include <EngineFactoryVk.h>
 #include <RefCntAutoPtr.hpp>
+#include <diligent_bindless.h>
 #include <diligent_internal.h>
+#include <diligent_materials_buffer.h>
 #include <diligent_shader_library.h>
 #include <filesystem>
 namespace swarm
@@ -25,6 +27,21 @@ namespace swarm
                 auto& allocator = SwarmModule::GetInstance().GetAllocator();
                 comb::Delete(allocator, renderContext.m_shaderLibrary);
                 renderContext.m_shaderLibrary = nullptr;
+            }
+
+            if (renderContext.m_bindlessHeap != nullptr)
+            {
+                auto& allocator = SwarmModule::GetInstance().GetAllocator();
+                comb::Delete(allocator, renderContext.m_bindlessHeap);
+                renderContext.m_bindlessHeap = nullptr;
+            }
+
+            if (renderContext.m_materialsBuffer != nullptr)
+            {
+                auto& allocator = SwarmModule::GetInstance().GetAllocator();
+                renderContext.m_materialsBuffer->Shutdown();
+                comb::Delete(allocator, renderContext.m_materialsBuffer);
+                renderContext.m_materialsBuffer = nullptr;
             }
 
             ShutdownSceneConstants(&renderContext);
@@ -105,6 +122,16 @@ namespace swarm
         if (!context->m_shaderLibrary->Initialize(context->m_device))
         {
             hive::LogError(LOG_SWARM, "CreateRenderContext: ShaderLibrary init failed");
+            ShutdownRenderContext(*context);
+            comb::Delete(allocator, context);
+            return nullptr;
+        }
+
+        context->m_bindlessHeap = comb::New<BindlessHeap>(allocator);
+        context->m_materialsBuffer = comb::New<MaterialsBuffer>(allocator);
+        if (!context->m_materialsBuffer->Initialize(context->m_device))
+        {
+            hive::LogError(LOG_SWARM, "CreateRenderContext: MaterialsBuffer init failed");
             ShutdownRenderContext(*context);
             comb::Delete(allocator, context);
             return nullptr;

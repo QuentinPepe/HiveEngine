@@ -15,6 +15,10 @@ cbuffer ObjectConstants
 {
     float4x4 g_world;
     float4x4 g_worldInvTranspose;
+    uint     g_materialIndex;
+    uint     _g_pad0;
+    uint     _g_pad1;
+    uint     _g_pad2;
 };
 
 cbuffer TimeConstants

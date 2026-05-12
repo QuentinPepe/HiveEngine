@@ -264,6 +264,10 @@ namespace swarm
             }
             mapped->m_world = world;
             mapped->m_worldInvTranspose = hive::math::Transpose(hive::math::Inverse(world));
+            mapped->m_materialIndex = material->m_materialIndex;
+            mapped->m_pad[0] = 0;
+            mapped->m_pad[1] = 0;
+            mapped->m_pad[2] = 0;
         }
 
         IBuffer* vertexBuffers[] = {mesh->m_vertexBuffer};
