@@ -1370,8 +1370,11 @@ namespace forge
                            "QMenu::item:selected { background: #3d2e0a; color: #f0a500; }"
                            "QMenu::separator { background: #2a2a2a; height: 1px; margin: 4px 8px; }");
 
-        menu.addAction("New Folder", this, &AssetBrowserPanel::OnNewFolderClicked);
-        menu.addAction("New Blueprint", this, &AssetBrowserPanel::OnNewBlueprintClicked);
+        auto* newMenu = menu.addMenu("New");
+        newMenu->setStyleSheet(menu.styleSheet());
+        newMenu->addAction("Folder", this, &AssetBrowserPanel::OnNewFolderClicked);
+        newMenu->addAction("Scene", this, &AssetBrowserPanel::OnNewSceneClicked);
+        newMenu->addAction("Blueprint", this, &AssetBrowserPanel::OnNewBlueprintClicked);
         menu.addAction("Import...", this, &AssetBrowserPanel::OnImportClicked);
         menu.addSeparator();
 
@@ -1429,11 +1432,17 @@ namespace forge
         {
             auto fsPath = std::filesystem::path{item->data(0, Qt::UserRole).toString().toStdString()};
 
-            menu.addAction("New Folder", this, [this, fsPath] {
+            auto* newMenu = menu.addMenu("New");
+            newMenu->setStyleSheet(menu.styleSheet());
+            newMenu->addAction("Folder", this, [this, fsPath] {
                 NavigateTo(fsPath);
                 OnNewFolderClicked();
             });
-            menu.addAction("New Blueprint", this, [this, fsPath] {
+            newMenu->addAction("Scene", this, [this, fsPath] {
+                NavigateTo(fsPath);
+                OnNewSceneClicked();
+            });
+            newMenu->addAction("Blueprint", this, [this, fsPath] {
                 NavigateTo(fsPath);
                 OnNewBlueprintClicked();
             });
@@ -1638,6 +1647,37 @@ namespace forge
 
         Refresh();
         emit assetOpenRequested(QString::fromStdString(filePath.generic_string()), AssetType::BLUEPRINT);
+    }
+
+    void AssetBrowserPanel::OnNewSceneClicked()
+    {
+        if (m_currentDir.empty())
+            return;
+
+        bool ok = false;
+        auto name = QInputDialog::getText(this, "New Scene", "Scene name:", QLineEdit::Normal, "NewScene", &ok);
+        if (!ok || name.isEmpty())
+            return;
+
+        auto filePath = m_currentDir / (name.toStdString() + ".hscene");
+        if (std::filesystem::exists(filePath))
+        {
+            QMessageBox::warning(this, "Error", "A file with that name already exists.");
+            return;
+        }
+
+        QFile file{QString::fromStdString(filePath.generic_string())};
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        {
+            QMessageBox::warning(this, "Error", "Failed to create scene file.");
+            return;
+        }
+        const char kEmptyScene[] = "{\"version\":1,\"entities\":[]}";
+        file.write(kEmptyScene, static_cast<qint64>(sizeof(kEmptyScene) - 1));
+        file.close();
+
+        Refresh();
+        emit sceneOpenRequested(QString::fromStdString(filePath.generic_string()));
     }
 
     void AssetBrowserPanel::CreateMaterialFromShader(const std::filesystem::path& shaderPath)
