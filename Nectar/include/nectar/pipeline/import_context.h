@@ -3,6 +3,7 @@
 #include <hive/hive_config.h>
 
 #include <comb/default_allocator.h>
+#include <comb/memory_resource.h>
 
 #include <wax/containers/string_view.h>
 #include <wax/containers/vector.h>
@@ -37,6 +38,19 @@ namespace nectar
             return *m_alloc;
         }
 
+        /// Large transient buffer allocator (e.g. for vertex/index buffers during mesh import).
+        /// Falls back to GetAllocator() if not explicitly set. Use SetLargeBufferAllocator()
+        /// to plug a SystemAllocator-backed resource for unbounded transient buffers.
+        [[nodiscard]] comb::MemoryResource LargeBufferAllocator() const noexcept
+        {
+            return m_largeBufferAlloc;
+        }
+
+        void SetLargeBufferAllocator(comb::MemoryResource alloc) noexcept
+        {
+            m_largeBufferAlloc = alloc;
+        }
+
         /// Virtual path of the asset being imported (e.g. "shaders/wave.vs.hlsl").
         /// Empty if the asset has been removed from the database mid-import.
         [[nodiscard]] wax::StringView SourcePath() const;
@@ -48,5 +62,6 @@ namespace nectar
         AssetDatabase* m_db;
         AssetId m_currentAsset;
         wax::Vector<DependencyEdge> m_declaredDeps;
+        comb::MemoryResource m_largeBufferAlloc;
     };
 } // namespace nectar

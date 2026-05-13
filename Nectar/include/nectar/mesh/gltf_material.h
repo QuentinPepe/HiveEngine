@@ -26,4 +26,25 @@ namespace nectar
     /// Parse a glTF/GLB blob and extract per-material texture info.
     /// Returns one entry per material in the glTF materials[] array.
     HIVE_API wax::Vector<GltfMaterialInfo> ParseGltfMaterials(wax::ByteSpan gltfData, comb::DefaultAllocator& alloc);
+
+    /// Compute the filename used for an embedded glTF image (buffer-view or data URI).
+    /// Used by both the extractor (writes the file) and the material parser (references it).
+    /// imageName is the image's optional name from glTF; mimeType is e.g. "image/png".
+    /// imageIndex is the position in glTF data->images[].
+    HIVE_API wax::String MakeEmbeddedTextureFileName(wax::StringView imageName, wax::StringView mimeType,
+                                                    size_t imageIndex, comb::DefaultAllocator& alloc);
+
+    /// Result entry for an extracted embedded texture.
+    struct GltfExtractedTexture
+    {
+        wax::String m_fileName{}; // basename written into modelDir
+    };
+
+    /// Extract images embedded in a glTF/GLB (buffer-view or data:image/...) into modelDir.
+    /// External-URI images are left untouched (assumed sibling-copied separately).
+    /// Returns one entry per glTF image in declaration order; entries are empty when
+    /// the image is external or extraction failed.
+    HIVE_API wax::Vector<GltfExtractedTexture> ExtractEmbeddedTextures(wax::ByteSpan gltfData,
+                                                                      const char* modelDir,
+                                                                      comb::DefaultAllocator& alloc);
 } // namespace nectar

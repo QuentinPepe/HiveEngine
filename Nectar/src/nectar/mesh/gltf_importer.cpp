@@ -89,9 +89,37 @@ namespace nectar
         }
 
         // Collect geometry from all meshes/primitives
-        auto& alloc = context.GetAllocator();
-        wax::Vector<MeshVertex> vertices{alloc};
+        auto bigAlloc = context.LargeBufferAllocator();
+        wax::Vector<MeshVertex> vertices{bigAlloc};
         wax::HashMap<int, wax::Vector<uint32_t>> matIndices;
+
+        // Pre-count vertices/indices to reserve exact capacity (avoids power-of-2 buddy waste).
+        {
+            size_t totalVerts = 0;
+            for (cgltf_size mi = 0; mi < data->meshes_count; ++mi)
+            {
+                const auto& mesh = data->meshes[mi];
+                for (cgltf_size pi = 0; pi < mesh.primitives_count; ++pi)
+                {
+                    const auto& prim = mesh.primitives[pi];
+                    if (prim.type != cgltf_primitive_type_triangles)
+                        continue;
+                    const cgltf_accessor* posAcc = nullptr;
+                    for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai)
+                    {
+                        if (prim.attributes[ai].type == cgltf_attribute_type_position)
+                        {
+                            posAcc = prim.attributes[ai].data;
+                            break;
+                        }
+                    }
+                    if (posAcc)
+                        totalVerts += static_cast<size_t>(posAcc->count);
+                }
+            }
+            if (totalVerts > 0)
+                vertices.Reserve(totalVerts);
+        }
 
         float aabbMin[3] = {1e30f, 1e30f, 1e30f};
         float aabbMax[3] = {-1e30f, -1e30f, -1e30f};
@@ -205,8 +233,11 @@ namespace nectar
                     vertices.PushBack(vert);
                 }
 
-                // Extract indices
-                auto& idxBuf = matIndices[matId];
+                // Extract indices — emplace with bigAlloc so per-material index buffers
+                // use the large transient allocator instead of the global default.
+                if (matIndices.Find(matId) == nullptr)
+                    matIndices.Emplace(matId, bigAlloc);
+                auto& idxBuf = *matIndices.Find(matId);
                 if (prim.indices)
                 {
                     for (cgltf_size ii = 0; ii < prim.indices->count; ++ii)
@@ -274,10 +305,10 @@ namespace nectar
                     size_t triCount = (idxEnd - idxStart) / 3;
 
                     // Accumulate per-vertex tangent/bitangent
-                    wax::Vector<float> tanAccum(vertices.Size() * 3);
+                    wax::Vector<float> tanAccum{bigAlloc, vertices.Size() * 3};
                     tanAccum.Resize(vertices.Size() * 3);
                     std::memset(tanAccum.Data(), 0, tanAccum.Size() * sizeof(float));
-                    wax::Vector<float> bitanAccum(vertices.Size() * 3);
+                    wax::Vector<float> bitanAccum{bigAlloc, vertices.Size() * 3};
                     bitanAccum.Resize(vertices.Size() * 3);
                     std::memset(bitanAccum.Data(), 0, bitanAccum.Size() * sizeof(float));
 
@@ -376,8 +407,8 @@ namespace nectar
         }
 
         // Flatten per-material buckets into final index buffer + submeshes
-        wax::Vector<uint32_t> indices;
-        wax::Vector<SubMesh> submeshes;
+        wax::Vector<uint32_t> indices{bigAlloc};
+        wax::Vector<SubMesh> submeshes{bigAlloc};
 
         for (auto&& [mat_id, idx_buf] : matIndices)
         {
@@ -442,6 +473,7 @@ namespace nectar
         std::memcpy(header.m_aabbMax, aabbMax, sizeof(aabbMax));
 
         size_t total = NmshTotalSize(header);
+        result.m_intermediateData = wax::ByteBuffer{bigAlloc};
         result.m_intermediateData.Resize(total);
         uint8_t* blob = result.m_intermediateData.Data();
 

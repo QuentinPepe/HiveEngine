@@ -9,6 +9,7 @@ namespace nectar
         , m_db{&db}
         , m_currentAsset{current}
         , m_declaredDeps{alloc}
+        , m_largeBufferAlloc{alloc}
     {
     }
 

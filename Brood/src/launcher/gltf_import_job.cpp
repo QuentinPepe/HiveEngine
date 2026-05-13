@@ -1,6 +1,8 @@
 #include <hive/core/log.h>
+#include <hive/platform/file_mapping.h>
 
 #include <comb/default_allocator.h>
+#include <comb/system_allocator.h>
 
 #include <wax/containers/string.h>
 #include <wax/containers/vector.h>
@@ -44,27 +46,6 @@ namespace nectar
     {
         auto hash = ContentHash::FromData(relativePath.Data(), relativePath.Size());
         return AssetId{hash.High(), hash.Low()};
-    }
-
-    static wax::Vector<uint8_t> ReadFileToVector(const std::filesystem::path& path)
-    {
-        FILE* f = nullptr;
-#ifdef _MSC_VER
-        fopen_s(&f, path.string().c_str(), "rb");
-#else
-        f = fopen(path.string().c_str(), "rb");
-#endif
-        if (!f)
-            return {};
-
-        fseek(f, 0, SEEK_END);
-        auto size = static_cast<size_t>(ftell(f));
-        fseek(f, 0, SEEK_SET);
-        wax::Vector<uint8_t> data{};
-        data.Resize(size);
-        fread(data.Data(), 1, size, f);
-        fclose(f);
-        return data;
     }
 
     static AssetId LookupTextureGuid(const wax::String& textureName, const std::filesystem::path& modelDir,
@@ -168,14 +149,65 @@ namespace nectar
 
         hive::LogInfo(LOG_IMPORT, "Textures copied: {}", result.m_textureCount);
 
-        auto gltfData = ReadFileToVector(gltfPath);
-        if (gltfData.IsEmpty())
+        hive::FileMapping gltfFile{};
+        if (!gltfFile.Open(gltfPath.string().c_str()) || gltfFile.Size() == 0)
         {
             result.m_error = wax::String{"Failed to read glTF file"};
             return result;
         }
 
-        hive::LogInfo(LOG_IMPORT, "Read glTF: {} bytes", gltfData.Size());
+        hive::LogInfo(LOG_IMPORT, "Mapped glTF: {} bytes", gltfFile.Size());
+
+        // Extract embedded textures (buffer-view images / data URIs) into modelDir
+        // and register them as assets. External-URI images are already handled by
+        // the sibling-copy pass above.
+        {
+            wax::ByteSpan extractSpan{gltfFile.Data(), gltfFile.Size()};
+            auto modelDirStr = modelDir.generic_string();
+            auto extracted = ExtractEmbeddedTextures(extractSpan, modelDirStr.c_str(), alloc);
+
+            for (size_t i = 0; i < extracted.Size(); ++i)
+            {
+                const auto& entry = extracted[i];
+                if (entry.m_fileName.IsEmpty())
+                    continue;
+
+                std::filesystem::path dstTexture = modelDir / entry.m_fileName.CStr();
+                auto relativePath = std::filesystem::relative(dstTexture, assetsDir, ec).generic_string();
+                if (ec)
+                {
+                    ec.clear();
+                    continue;
+                }
+
+                auto assetId = MakeAssetIdFromPath(wax::StringView{relativePath.c_str()});
+
+                HiveIdData texHid{assetId, wax::String{"Texture"}};
+                WriteHiveId(dstTexture.string().c_str(), texHid);
+
+                if (!db.Contains(assetId))
+                {
+                    AssetRecord rec{};
+                    rec.m_uuid = assetId;
+                    rec.m_path = wax::String{relativePath.c_str()};
+                    rec.m_type = wax::String{"Texture"};
+                    rec.m_name = wax::String{dstTexture.stem().string().c_str()};
+                    db.Insert(static_cast<AssetRecord&&>(rec));
+                }
+
+                if (pipeline)
+                {
+                    ImportRequest req;
+                    req.m_sourcePath = wax::StringView{relativePath.c_str()};
+                    req.m_assetId = assetId;
+                    (void)pipeline->ImportAsset(req);
+                }
+
+                ++result.m_textureCount;
+                report("Extracting embedded textures", result.m_textureCount, 0);
+            }
+            hive::LogInfo(LOG_IMPORT, "Embedded textures extracted; total textures: {}", result.m_textureCount);
+        }
 
         {
             GltfImporter importer{};
@@ -184,12 +216,14 @@ namespace nectar
             settings.SetValue("import", "base_path",
                               HiveValue::MakeString(alloc, wax::StringView{gltfPathStr.c_str()}));
 
-            wax::ByteSpan meshSpan{reinterpret_cast<const std::byte*>(gltfData.Data()), gltfData.Size()};
+            wax::ByteSpan meshSpan{gltfFile.Data(), gltfFile.Size()};
             auto meshRelName = std::string{modelName.CStr()} + ".nmsh";
             auto meshAssetId = MakeAssetIdFromPath(wax::StringView{meshRelName.c_str()});
 
-            comb::ModuleAllocator importAlloc{"GltfMeshImport", 256 * 1024 * 1024};
+            comb::ModuleAllocator importAlloc{"GltfMeshImport", 16 * 1024 * 1024};
+            comb::SystemAllocator importBigAlloc{"GltfMeshImport.Big"};
             ImportContext ctx{importAlloc.Get(), db, meshAssetId};
+            ctx.SetLargeBufferAllocator(comb::MemoryResource{importBigAlloc});
 
             report("Importing mesh", 0, 1);
             hive::LogInfo(LOG_IMPORT, "Importing mesh...");
@@ -248,7 +282,7 @@ namespace nectar
             }
         }
 
-        wax::ByteSpan gltfSpan{reinterpret_cast<const std::byte*>(gltfData.Data()), gltfData.Size()};
+        wax::ByteSpan gltfSpan{gltfFile.Data(), gltfFile.Size()};
         auto materials = ParseGltfMaterials(gltfSpan, alloc);
 
         for (size_t mi = 0; mi < materials.Size(); ++mi)
