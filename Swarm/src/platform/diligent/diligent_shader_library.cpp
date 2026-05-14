@@ -179,14 +179,20 @@ namespace swarm
     {
         if (!m_cache || m_diskCachePath.IsEmpty())
         {
+            hive::LogWarning(LOG_SWARM, "SaveDiskCache skipped: cache={} path={}",
+                             m_cache ? "ok" : "null", m_diskCachePath.IsEmpty() ? "empty" : m_diskCachePath.CStr());
             return false;
         }
 
         RefCntAutoPtr<IDataBlob> blob;
-        if (!m_cache->WriteToBlob(~0u, &blob) || !blob)
+        const bool writeOk = m_cache->WriteToBlob(~0u, &blob);
+        if (!writeOk || !blob)
         {
+            hive::LogWarning(LOG_SWARM, "SaveDiskCache failed: WriteToBlob returned={}, blob={}",
+                             writeOk ? "true" : "false", blob ? "non-null" : "null");
             return false;
         }
+        hive::LogInfo(LOG_SWARM, "SaveDiskCache: writing {} bytes", blob->GetSize());
 
         FILE* file = OpenFile(m_diskCachePath.CStr(), "wb");
         if (file == nullptr)
