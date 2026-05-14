@@ -6,19 +6,35 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
 import dev.hive.clion.config.model.CompilerFamily
+import dev.hive.clion.config.model.ToolchainOverride
 import dev.hive.clion.config.model.ToolchainPlatform
 import dev.hive.clion.config.model.ToolchainSnapshot
 import java.nio.charset.StandardCharsets
 
 object ToolchainDetection {
-    fun detect(project: Project): ToolchainSnapshot {
-        detectFromClionToolchain()?.let { return it }
-        detectFromExistingCaches(project)?.let { return it }
-        return ToolchainSnapshot(
-            platform = hostPlatform(),
-            compilerFamily = CompilerFamily.UNKNOWN,
-            toolchainName = "Host defaults",
-            detectionSource = "host",
+    fun detect(project: Project, override: ToolchainOverride = ToolchainOverride.NONE): ToolchainSnapshot {
+        val detected = detectFromClionToolchain()
+            ?: detectFromExistingCaches(project)
+            ?: ToolchainSnapshot(
+                platform = hostPlatform(),
+                compilerFamily = CompilerFamily.UNKNOWN,
+                toolchainName = "Host defaults",
+                detectionSource = "host",
+            )
+        return applyOverride(detected, override)
+    }
+
+    fun applyOverride(snapshot: ToolchainSnapshot, override: ToolchainOverride): ToolchainSnapshot {
+        if (override.isEmpty) return snapshot
+        val source = if (snapshot.detectionSource == "host" && snapshot.compilerFamily == CompilerFamily.UNKNOWN) {
+            "manual"
+        } else {
+            "${snapshot.detectionSource}+manual"
+        }
+        return snapshot.copy(
+            platform = override.platform ?: snapshot.platform,
+            compilerFamily = override.compilerFamily ?: snapshot.compilerFamily,
+            detectionSource = source,
         )
     }
 

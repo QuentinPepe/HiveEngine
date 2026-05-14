@@ -110,3 +110,15 @@ data class FeatureAvailability(
     val reason: String? = null,
     val allowedOptionValues: Set<String>? = null,
 )
+
+data class ToolchainOverride(
+    val platform: ToolchainPlatform? = null,
+    val compilerFamily: CompilerFamily? = null,
+) {
+    val isEmpty: Boolean
+        get() = platform == null && compilerFamily == null
+
+    companion object {
+        val NONE = ToolchainOverride()
+    }
+}

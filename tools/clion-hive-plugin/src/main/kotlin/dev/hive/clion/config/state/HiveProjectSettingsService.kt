@@ -5,10 +5,13 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.project.Project
+import dev.hive.clion.config.model.CompilerFamily
 import dev.hive.clion.config.model.FeatureDefinition
 import dev.hive.clion.config.model.HiveFeaturesFile
 import dev.hive.clion.config.model.HiveUiState
 import dev.hive.clion.config.model.ModeConfiguration
+import dev.hive.clion.config.model.ToolchainOverride
+import dev.hive.clion.config.model.ToolchainPlatform
 
 @Service(Service.Level.PROJECT)
 @State(name = "HiveEngineConfig", storages = [Storage("hiveEngineConfig.xml")])
@@ -64,6 +67,17 @@ class HiveProjectSettingsService : PersistentStateComponent<HiveProjectSettingsS
         state.customPresets = updatedCustomPresets
     }
 
+    fun loadToolchainOverride(): ToolchainOverride =
+        ToolchainOverride(
+            platform = state.overridePlatform?.let { runCatching { ToolchainPlatform.valueOf(it) }.getOrNull() },
+            compilerFamily = state.overrideCompiler?.let { runCatching { CompilerFamily.valueOf(it) }.getOrNull() },
+        )
+
+    fun saveToolchainOverride(override: ToolchainOverride) {
+        state.overridePlatform = override.platform?.name
+        state.overrideCompiler = override.compilerFamily?.name
+    }
+
     private fun legacyPresetFor(mode: String): HiveFeaturePresetState? =
         when (mode) {
             "Editor" -> state.editorPreset
@@ -86,6 +100,8 @@ class HiveProjectSettingsState {
     var gamePreset: HiveFeaturePresetState? = null
     var headlessPreset: HiveFeaturePresetState? = null
     var customPresets: MutableMap<String, HiveFeaturePresetState> = linkedMapOf()
+    var overridePlatform: String? = null
+    var overrideCompiler: String? = null
 }
 
 class HiveFeaturePresetState {

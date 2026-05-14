@@ -15,6 +15,7 @@ import dev.hive.clion.config.model.HiveFeaturesFile
 import dev.hive.clion.config.model.HiveUiState
 import dev.hive.clion.config.model.HiveWorkspaceContext
 import dev.hive.clion.config.model.ModeConfiguration
+import dev.hive.clion.config.model.ToolchainOverride
 import dev.hive.clion.config.model.ToolchainPlatform
 import dev.hive.clion.config.presets.CMakeUserPresetsGenerator
 import dev.hive.clion.config.state.HiveProjectSettingsService
@@ -44,7 +45,8 @@ class EngineWorkspacePanel(
     private val settingsService = HiveProjectSettingsService.getInstance(project)
     private val catalog: HiveFeaturesFile
     private val uiState: HiveUiState
-    private var toolchain = ToolchainDetection.detect(project)
+    private var override: ToolchainOverride = settingsService.loadToolchainOverride()
+    private var toolchain = ToolchainDetection.detect(project, override)
     private var selectedMode: String
     private var updatingUi = false
 
@@ -54,6 +56,8 @@ class EngineWorkspacePanel(
     private val toolchainSourceLabel = JBLabel()
     private val basePresetLabel = JBLabel()
     private val capabilityLabel = JBLabel()
+    private val platformOverrideCombo = JComboBox<OverrideOption<ToolchainPlatform>>()
+    private val compilerOverrideCombo = JComboBox<OverrideOption<CompilerFamily>>()
     private val groupsPanel = JPanel()
     private val featureControls = linkedMapOf<String, FeatureControl>()
     private val modeButtons = linkedMapOf<String, javax.swing.JRadioButton>()
@@ -157,13 +161,89 @@ class EngineWorkspacePanel(
         detailsPanel.add(basePresetLabel)
         detailsPanel.add(capabilityLabel)
 
+        val overridePanel = JPanel(GridBagLayout())
+        overridePanel.isOpaque = false
+        overridePanel.border = JBUI.Borders.emptyTop(6)
+        configureOverrideCombos()
+        addFormRow(overridePanel, 0, "Platform override", platformOverrideCombo)
+        addFormRow(overridePanel, 1, "Compiler override", compilerOverrideCombo)
+
         card.add(controls)
         card.add(Box.createVerticalStrut(JBUI.scale(8)))
         card.add(TitledSeparator("Active Toolchain"))
         card.add(Box.createVerticalStrut(JBUI.scale(4)))
         card.add(detailsPanel)
+        card.add(overridePanel)
 
         return card
+    }
+
+    private fun configureOverrideCombos() {
+        platformOverrideCombo.model = DefaultComboBoxModel(
+            arrayOf(
+                OverrideOption("Auto", null),
+                OverrideOption("Windows", ToolchainPlatform.WINDOWS),
+                OverrideOption("Linux", ToolchainPlatform.LINUX),
+                OverrideOption("macOS", ToolchainPlatform.MACOS),
+            )
+        )
+        platformOverrideCombo.preferredSize = Dimension(JBUI.scale(180), platformOverrideCombo.preferredSize.height)
+        platformOverrideCombo.toolTipText = "Force the target platform when CLion's auto-detection is wrong."
+        platformOverrideCombo.addItemListener { event ->
+            if (!updatingUi && event.stateChange == ItemEvent.SELECTED) {
+                @Suppress("UNCHECKED_CAST")
+                val value = (platformOverrideCombo.selectedItem as? OverrideOption<ToolchainPlatform>)?.value
+                override = override.copy(platform = value)
+                applyOverrideAndRefresh()
+            }
+        }
+
+        compilerOverrideCombo.model = DefaultComboBoxModel(
+            arrayOf(
+                OverrideOption("Auto", null),
+                OverrideOption("LLVM/Clang", CompilerFamily.LLVM),
+                OverrideOption("GCC", CompilerFamily.GCC),
+                OverrideOption("MSVC", CompilerFamily.MSVC),
+            )
+        )
+        compilerOverrideCombo.preferredSize = Dimension(JBUI.scale(180), compilerOverrideCombo.preferredSize.height)
+        compilerOverrideCombo.toolTipText = "Force the compiler family when CLion's auto-detection is wrong."
+        compilerOverrideCombo.addItemListener { event ->
+            if (!updatingUi && event.stateChange == ItemEvent.SELECTED) {
+                @Suppress("UNCHECKED_CAST")
+                val value = (compilerOverrideCombo.selectedItem as? OverrideOption<CompilerFamily>)?.value
+                override = override.copy(compilerFamily = value)
+                applyOverrideAndRefresh()
+            }
+        }
+    }
+
+    private fun applyOverrideAndRefresh() {
+        toolchain = ToolchainDetection.detect(project, override)
+        CMakeUserPresetsGenerator.normalize(catalog, uiState, toolchain)
+        updateHeader()
+        reloadMode(selectedMode)
+        settingsService.saveToolchainOverride(override)
+        persistState()
+    }
+
+    private fun syncOverrideCombos() {
+        val previous = updatingUi
+        updatingUi = true
+        try {
+            platformOverrideCombo.selectedItem = (0 until platformOverrideCombo.itemCount)
+                .map { platformOverrideCombo.getItemAt(it) }
+                .firstOrNull { it.value == override.platform }
+            compilerOverrideCombo.selectedItem = (0 until compilerOverrideCombo.itemCount)
+                .map { compilerOverrideCombo.getItemAt(it) }
+                .firstOrNull { it.value == override.compilerFamily }
+        } finally {
+            updatingUi = previous
+        }
+    }
+
+    private data class OverrideOption<T>(val label: String, val value: T?) {
+        override fun toString(): String = label
     }
 
     private fun createBottomBar(): JComponent {
@@ -171,7 +251,7 @@ class EngineWorkspacePanel(
         links.isOpaque = false
         links.add(ActionLink("Reset current mode") { resetCurrentMode() })
         links.add(ActionLink("Refresh toolchain") {
-            toolchain = ToolchainDetection.detect(project)
+            toolchain = ToolchainDetection.detect(project, override)
             CMakeUserPresetsGenerator.normalize(catalog, uiState, toolchain)
             updateHeader()
             reloadMode(selectedMode)
@@ -355,6 +435,7 @@ class EngineWorkspacePanel(
         uiState.modes.getValue(selectedMode)
 
     private fun updateHeader() {
+        syncOverrideCombos()
         toolchainLabel.text = toolchain.summary()
         toolchainSourceLabel.text = "${toolchain.toolchainName} (${toolchain.detectionSource})"
         basePresetLabel.text = "Base preset: ${suggestedBasePreset()}"
