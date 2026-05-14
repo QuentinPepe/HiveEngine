@@ -97,6 +97,7 @@ namespace queen
         result.m_fieldCount = s_holder.m_reflector.Count();
         result.m_typeId = TypeIdOf<T>();
         result.m_name = s_holder.m_name;
+        result.m_category = s_holder.m_reflector.GetCategory();
         return result;
     }
 

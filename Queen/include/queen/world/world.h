@@ -435,6 +435,77 @@ namespace queen
             Add<T>(entity, std::forward<T>(component));
         }
 
+        /**
+         * Add or replace a component on an entity using type-erased metadata.
+         *
+         * Used by the editor where the component type is only known at runtime.
+         * Fires OnAdd / OnSet observers through the TypeId-keyed dispatch.
+         */
+        void AddRaw(Entity entity, const ComponentMeta& meta, const void* sourceData)
+        {
+            HIVE_PROFILE_SCOPE_N("World::AddRaw");
+            if (!IsAlive(entity))
+                return;
+
+            EntityRecord* record = m_entityLocations.Get(entity);
+            if (record == nullptr || record->m_archetype == nullptr)
+                return;
+
+            Archetype<ComponentAllocator>* oldArch = record->m_archetype;
+
+            if (oldArch->HasComponent(meta.m_typeId))
+            {
+                oldArch->SetComponent(record->m_row, meta.m_typeId, sourceData);
+                const void* comp = oldArch->GetComponentRaw(record->m_row, meta.m_typeId);
+                m_observers.Trigger(TriggerType::SET, meta.m_typeId, *this, entity, comp);
+                return;
+            }
+
+            Archetype<ComponentAllocator>* newArch = m_archetypeGraph.GetOrCreateAddTarget(*oldArch, meta);
+
+            if (newArch != oldArch)
+            {
+                RegisterNewArchetype(newArch);
+            }
+
+            MoveEntity(entity, *record, oldArch, newArch);
+            newArch->SetComponent(record->m_row, meta.m_typeId, sourceData);
+            const void* comp = newArch->GetComponentRaw(record->m_row, meta.m_typeId);
+            m_observers.Trigger(TriggerType::ADD, meta.m_typeId, *this, entity, comp);
+        }
+
+        /**
+         * Remove a component identified by TypeId. Counterpart to AddRaw.
+         * Fires the OnRemove observer BEFORE moving the entity so handlers
+         * can still read the component data.
+         */
+        void RemoveByTypeId(Entity entity, TypeId typeId)
+        {
+            HIVE_PROFILE_SCOPE_N("World::RemoveByTypeId");
+            if (!IsAlive(entity))
+                return;
+
+            EntityRecord* record = m_entityLocations.Get(entity);
+            if (record == nullptr || record->m_archetype == nullptr)
+                return;
+
+            Archetype<ComponentAllocator>* oldArch = record->m_archetype;
+            if (!oldArch->HasComponent(typeId))
+                return;
+
+            const void* comp = oldArch->GetComponentRaw(record->m_row, typeId);
+            m_observers.Trigger(TriggerType::REMOVE, typeId, *this, entity, comp);
+
+            Archetype<ComponentAllocator>* newArch = m_archetypeGraph.GetOrCreateRemoveTarget(*oldArch, typeId);
+
+            if (newArch != oldArch)
+            {
+                RegisterNewArchetype(newArch);
+            }
+
+            MoveEntity(entity, *record, oldArch, newArch);
+        }
+
         [[nodiscard]] size_t EntityCount() const noexcept
         {
             return m_entityAllocator.AliveCount();

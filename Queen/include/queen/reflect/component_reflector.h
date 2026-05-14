@@ -4,6 +4,7 @@
 
 #include <queen/core/entity.h>
 #include <queen/core/type_id.h>
+#include <queen/reflect/component_category.h>
 #include <queen/reflect/enum_reflection.h>
 #include <queen/reflect/field_attributes.h>
 #include <queen/reflect/field_info.h>
@@ -150,6 +151,22 @@ namespace queen
         constexpr ComponentReflector() noexcept = default;
 
         /**
+         * Tag the whole component with a category. User by default.
+         *
+         * System  → engine-managed, hidden from "Add Component" picker.
+         * Internal→ never shown in the inspector at all.
+         */
+        constexpr void Category(ComponentCategory category) noexcept
+        {
+            m_category = category;
+        }
+
+        [[nodiscard]] constexpr ComponentCategory GetCategory() const noexcept
+        {
+            return m_category;
+        }
+
+        /**
          * Register a field with automatic type deduction
          *
          * Returns a FieldBuilder for optional chaining of editor annotations.
@@ -292,6 +309,7 @@ namespace queen
         FieldInfo m_fields[MaxFields]{};
         FieldAttributes m_attributes[MaxFields]{};
         size_t m_count = 0;
+        ComponentCategory m_category = ComponentCategory::USER;
     };
 
     /**
@@ -306,6 +324,7 @@ namespace queen
         size_t m_fieldCount = 0;
         TypeId m_typeId = 0;
         const char* m_name = nullptr;
+        ComponentCategory m_category = ComponentCategory::USER;
 
         [[nodiscard]] constexpr bool IsValid() const noexcept
         {
