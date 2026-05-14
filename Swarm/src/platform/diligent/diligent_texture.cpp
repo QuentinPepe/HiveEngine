@@ -27,9 +27,31 @@ namespace swarm
                     return TEX_FORMAT_RGBA8_UNORM;
                 case TextureFormat::R8_UNORM:
                     return TEX_FORMAT_R8_UNORM;
+                case TextureFormat::BC7_UNORM:
+                    return TEX_FORMAT_BC7_UNORM;
+                case TextureFormat::BC7_UNORM_SRGB:
+                    return TEX_FORMAT_BC7_UNORM_SRGB;
                 case TextureFormat::RGBA8_SRGB:
                 default:
                     return TEX_FORMAT_RGBA8_UNORM_SRGB;
+            }
+        }
+
+        // Bytes per mip row for the given format. For BC7, "row" means a row of 4x4 blocks
+        // (16 bytes each), so a 1×1, 2×2, 3×3 or 4×4 mip all share the same 16-byte stride.
+        Uint64 ComputeRowStride(TextureFormat fmt, uint32_t width)
+        {
+            switch (fmt)
+            {
+                case TextureFormat::BC7_UNORM:
+                case TextureFormat::BC7_UNORM_SRGB: {
+                    const uint32_t blocksW = (width + 3) / 4;
+                    return static_cast<Uint64>(blocksW) * 16;
+                }
+                case TextureFormat::R8_UNORM:
+                    return static_cast<Uint64>(width);
+                default:
+                    return static_cast<Uint64>(width) * 4;
             }
         }
     } // namespace
@@ -59,8 +81,7 @@ namespace swarm
         {
             TextureSubResData s;
             s.pData = desc.m_mips[i].m_pixels;
-            const uint32_t bpp = (desc.m_format == TextureFormat::R8_UNORM) ? 1u : 4u;
-            s.Stride = static_cast<Uint64>(desc.m_mips[i].m_width) * bpp;
+            s.Stride = ComputeRowStride(desc.m_format, desc.m_mips[i].m_width);
             subres.PushBack(s);
         }
         TextureData data;
