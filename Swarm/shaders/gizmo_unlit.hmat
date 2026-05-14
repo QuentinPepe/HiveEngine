@@ -1,0 +1,4 @@
+[material]
+shader = "engine/gizmo_unlit.hshader"
+
+[parameters]

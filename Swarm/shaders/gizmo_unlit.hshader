@@ -1,0 +1,12 @@
+[shader]
+name = "EditorGizmoUnlit"
+vertex = "gizmo_unlit.vs.hlsl"
+pixel = "gizmo_unlit.ps.hlsl"
+domain = "StaticMesh"
+shading_model = "Unlit"
+
+[render_state]
+cull = "None"
+blend = "AlphaBlend"
+depth_test = false
+depth_write = false
