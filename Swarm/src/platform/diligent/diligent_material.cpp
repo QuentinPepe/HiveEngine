@@ -217,6 +217,8 @@ namespace swarm
         psoInfo.GraphicsPipeline.RasterizerDesc.CullMode = TranslateCullMode(desc.m_cullMode);
         psoInfo.GraphicsPipeline.RasterizerDesc.FillMode = TranslateFillMode(desc.m_fillMode);
         psoInfo.GraphicsPipeline.RasterizerDesc.FrontCounterClockwise = desc.m_frontCCW ? True : False;
+        psoInfo.GraphicsPipeline.RasterizerDesc.DepthBias = desc.m_depthBias;
+        psoInfo.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = desc.m_slopeScaledDepthBias;
         psoInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = desc.m_depthTest ? True : False;
         psoInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = desc.m_depthWrite ? True : False;
         ConfigureBlend(psoInfo.GraphicsPipeline.BlendDesc.RenderTargets[0], desc.m_blendMode);

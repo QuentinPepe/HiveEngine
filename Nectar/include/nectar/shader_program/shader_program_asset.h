@@ -49,6 +49,8 @@ namespace nectar
         bool m_depthTest{true};
         bool m_depthWrite{true};
         bool m_frontCcw{true};
+        int32_t m_depthBias{0};
+        float m_slopeScaledDepthBias{0.f};
     };
 
     struct ShaderProgramAsset

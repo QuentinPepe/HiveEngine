@@ -92,6 +92,9 @@ namespace nectar
             rs.m_depthTest = parsed.m_document.GetBool("render_state", "depth_test", true);
             rs.m_depthWrite = parsed.m_document.GetBool("render_state", "depth_write", true);
             rs.m_frontCcw = parsed.m_document.GetBool("render_state", "front_ccw", true);
+            rs.m_depthBias = static_cast<int32_t>(parsed.m_document.GetInt("render_state", "depth_bias", 0));
+            rs.m_slopeScaledDepthBias =
+                static_cast<float>(parsed.m_document.GetFloat("render_state", "slope_scaled_depth_bias", 0.0));
             asset->m_renderState = static_cast<ShaderRenderState&&>(rs);
         }
 

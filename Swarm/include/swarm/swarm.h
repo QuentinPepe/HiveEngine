@@ -230,6 +230,8 @@ namespace swarm
         bool m_depthTest{true};
         bool m_depthWrite{true};
         bool m_frontCCW{true};
+        int32_t m_depthBias{0};
+        float m_slopeScaledDepthBias{0.f};
     };
 
     HIVE_API Material* CreateMaterial(RenderContext* renderContext, const MaterialDesc& desc);

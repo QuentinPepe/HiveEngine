@@ -16,17 +16,50 @@ function(hive_find_windows_sdk_tool tool_name out_var)
 endfunction()
 
 # Find LLVM installation
-# Priority: Environment variable > VS installation > Common install locations
+# Priority: LLVM_PATH env var > clang shipped with any Visual Studio edition > standalone LLVM
 if(DEFINED ENV{LLVM_PATH})
     set(LLVM_ROOT "$ENV{LLVM_PATH}")
-elseif(EXISTS "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/Llvm/x64")
-    set(LLVM_ROOT "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/Llvm/x64")
-elseif(EXISTS "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64")
-    set(LLVM_ROOT "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/Llvm/x64")
-elseif(EXISTS "C:/Program Files/LLVM")
-    set(LLVM_ROOT "C:/Program Files/LLVM")
 else()
-    message(FATAL_ERROR "LLVM not found. Set LLVM_PATH environment variable or install LLVM")
+    set(_hive_vs_root_candidates "")
+    if(DEFINED ENV{ProgramFiles})
+        list(APPEND _hive_vs_root_candidates "$ENV{ProgramFiles}/Microsoft Visual Studio")
+    endif()
+    if(DEFINED ENV{ProgramW6432})
+        list(APPEND _hive_vs_root_candidates "$ENV{ProgramW6432}/Microsoft Visual Studio")
+    endif()
+    list(APPEND _hive_vs_root_candidates
+        "C:/Program Files/Microsoft Visual Studio"
+        "C:/Program Files (x86)/Microsoft Visual Studio")
+    list(REMOVE_DUPLICATES _hive_vs_root_candidates)
+
+    set(_hive_vs_llvm_globs "")
+    foreach(_hive_vs_root IN LISTS _hive_vs_root_candidates)
+        # Wildcard the VS version (2019, 2022, 18, future) and edition
+        # (Community, Professional, Enterprise, BuildTools, Preview).
+        list(APPEND _hive_vs_llvm_globs "${_hive_vs_root}/*/*/VC/Tools/Llvm/x64")
+    endforeach()
+
+    set(_hive_vs_llvm_paths "")
+    if(_hive_vs_llvm_globs)
+        file(GLOB _hive_vs_llvm_paths ${_hive_vs_llvm_globs})
+    endif()
+
+    if(_hive_vs_llvm_paths)
+        list(SORT _hive_vs_llvm_paths COMPARE NATURAL ORDER DESCENDING)
+        list(GET _hive_vs_llvm_paths 0 LLVM_ROOT)
+    elseif(EXISTS "C:/Program Files/LLVM")
+        set(LLVM_ROOT "C:/Program Files/LLVM")
+    else()
+        message(FATAL_ERROR
+            "LLVM not found. Tried LLVM_PATH env var, every Visual Studio edition under "
+            "'Microsoft Visual Studio/*/*/VC/Tools/Llvm/x64', and 'C:/Program Files/LLVM'. "
+            "Either install the C++ Clang tooling component in Visual Studio (any edition), "
+            "install standalone LLVM, or set LLVM_PATH to your install.")
+    endif()
+
+    unset(_hive_vs_root_candidates)
+    unset(_hive_vs_llvm_globs)
+    unset(_hive_vs_llvm_paths)
 endif()
 
 # Set compilers

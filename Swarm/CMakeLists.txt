@@ -305,6 +305,14 @@ set(_swarm_engine_shader_files
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.ps.hlsl
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.hshader
     ${CMAKE_CURRENT_SOURCE_DIR}/shaders/standard.hmat
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grid_xz.vs.hlsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grid_xz.ps.hlsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grid_xz.hshader
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/grid_xz.hmat
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_unlit.vs.hlsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_unlit.ps.hlsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_unlit.hshader
+    ${CMAKE_CURRENT_SOURCE_DIR}/shaders/gizmo_unlit.hmat
 )
 set(_swarm_shader_output_dir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/shaders/engine)
 set(_swarm_shader_stamp ${CMAKE_CURRENT_BINARY_DIR}/swarm_shader_stage.stamp)
