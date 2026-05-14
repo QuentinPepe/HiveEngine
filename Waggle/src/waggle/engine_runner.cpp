@@ -15,6 +15,7 @@
 #include <waggle/render/render_module.h>
 #include <waggle/render/render_resource.h>
 #include <waggle/systems/editor_camera_system.h>
+#include <waggle/systems/gizmo_render_system.h>
 #include <waggle/systems/mesh_render_system.h>
 
 #include <swarm/swarm.h>
@@ -263,6 +264,8 @@ namespace
         void TickEditorCameras()
         {
             waggle::UpdateEditorCameras(m_app.GetWorld());
+            waggle::UpdateEditorGrid(m_app.GetWorld());
+            waggle::UpdateGizmoVisual(m_app.GetWorld());
         }
 
         void StartRenderThreadIfReady(swarm::RenderContext* renderContext)

@@ -55,6 +55,8 @@ target_sources(Forge
         src/forge/progress_overlay.cpp
         src/forge/project_hub.cpp
         src/forge/vulkan_viewport_widget.cpp
+        src/forge/gizmo_interaction.cpp
+        include/forge/gizmo_interaction.h
         include/forge/hierarchy_panel.h
         include/forge/console_panel.h
         include/forge/project_hub.h

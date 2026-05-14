@@ -1,0 +1,14 @@
+[shader]
+name = "EditorGridXZ"
+vertex = "grid_xz.vs.hlsl"
+pixel = "grid_xz.ps.hlsl"
+domain = "StaticMesh"
+shading_model = "Unlit"
+
+[render_state]
+cull = "None"
+blend = "AlphaBlend"
+depth_test = true
+depth_write = false
+depth_bias = -1000
+slope_scaled_depth_bias = 0.0

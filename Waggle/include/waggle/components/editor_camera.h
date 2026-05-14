@@ -8,14 +8,15 @@
 namespace waggle
 {
     inline constexpr float kEditorCameraPitchLimitRad = 1.5f;
-    inline constexpr float kEditorCameraMinSpeed = 0.1f;
-    inline constexpr float kEditorCameraMaxSpeed = 5000.f;
+    inline constexpr float kEditorCameraMinSpeed = 0.001f;
+    inline constexpr float kEditorCameraMaxSpeed = 2.f;
+    inline constexpr float kEditorCameraBaseSpeed = 6.f;
 
     struct EditorCameraController
     {
-        float m_moveSpeed{5.f};
+        float m_moveSpeed{1.f};
         float m_boostMultiplier{3.f};
-        float m_lookSensitivity{0.003f}; // radians per pixel
+        float m_lookSensitivity{0.003f};
         float m_yawRad{0.f};
         float m_pitchRad{0.f};
 

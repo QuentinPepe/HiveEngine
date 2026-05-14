@@ -12,6 +12,8 @@
 #include <terra/input/keys.h>
 
 #include <waggle/components/editor_camera.h>
+#include <waggle/components/editor_grid.h>
+#include <waggle/components/editor_only.h>
 #include <waggle/components/transform.h>
 #include <waggle/time.h>
 
@@ -100,7 +102,7 @@ namespace waggle
                     {
                         move += right;
                     }
-                    if (keyboard->IsDown(terra::Key::A))
+                    if (keyboard->IsDown(terra::Key::Q))
                     {
                         move -= right;
                     }
@@ -110,15 +112,19 @@ namespace waggle
                     }
                     if (keyboard->IsDown(terra::Key::LEFT_CONTROL) ||
                         keyboard->IsDown(terra::Key::RIGHT_CONTROL) ||
-                        keyboard->IsDown(terra::Key::Q))
+                        keyboard->IsDown(terra::Key::A))
                     {
                         move -= up;
                     }
 
+                    const float distanceFactor =
+                        hive::math::Max(1.f, hive::math::Abs(transform.m_position.m_y) / 20.f);
+                    const float baseSpeed =
+                        kEditorCameraBaseSpeed * controller.m_moveSpeed * distanceFactor;
                     const float speed = (keyboard->IsDown(terra::Key::LEFT_SHIFT) ||
                                          keyboard->IsDown(terra::Key::RIGHT_SHIFT))
-                                            ? controller.m_moveSpeed * controller.m_boostMultiplier
-                                            : controller.m_moveSpeed;
+                                            ? baseSpeed * controller.m_boostMultiplier
+                                            : baseSpeed;
                     const float lengthSquared =
                         move.m_x * move.m_x + move.m_y * move.m_y + move.m_z * move.m_z;
                     if (lengthSquared > 0.0001f)
@@ -143,5 +149,36 @@ namespace waggle
         mouse->m_dx = 0.f;
         mouse->m_dy = 0.f;
         mouse->m_scrollY = 0.f;
+    }
+
+    void UpdateEditorGrid(queen::World& world)
+    {
+        hive::math::Float3 camPos{0.f, 1.f, 0.f};
+        bool found = false;
+        world.Query<queen::Read<WorldMatrix>, queen::Read<EditorCameraController>, queen::Read<EditorOnly>>().Each(
+            [&](const WorldMatrix& wm, const EditorCameraController&, const EditorOnly&) {
+                if (!found)
+                {
+                    camPos = hive::math::Float3{wm.m_matrix.m_m[3][0], wm.m_matrix.m_m[3][1], wm.m_matrix.m_m[3][2]};
+                    found = true;
+                }
+            });
+        if (!found)
+        {
+            return;
+        }
+
+        const float refDist = hive::math::Max(hive::math::Abs(camPos.m_y), 1.f);
+        const float span = refDist * 2000.f;
+        const hive::math::Float3 gridPos{camPos.m_x, 0.f, camPos.m_z};
+        const hive::math::Float3 gridScale{span, 1.f, span};
+        const hive::math::Mat4 gridWorld = hive::math::TRS(gridPos, hive::math::Quat{}, gridScale);
+
+        world.Query<queen::Write<Transform>, queen::Write<WorldMatrix>, queen::Read<EditorGrid>>().Each(
+            [&](Transform& transform, WorldMatrix& worldMatrix, const EditorGrid&) {
+                transform.m_position = gridPos;
+                transform.m_scale = gridScale;
+                worldMatrix.m_matrix = gridWorld;
+            });
     }
 } // namespace waggle
