@@ -1,5 +1,6 @@
 #include <hive/core/log.h>
 #include <hive/hive_config.h>
+#include <hive/platform/file_mapping.h>
 
 #include <comb/default_allocator.h>
 
@@ -25,8 +26,13 @@
 
 #include <terra/terra.h>
 
+#include <waggle/render/render_module.h>
+
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <launcher/launcher_platform.h>
 #include <launcher/launcher_project.h>
@@ -95,18 +101,128 @@ namespace brood::launcher
         std::string shadowStr = shadowFsPath.string();
         const char* loadPath = ec ? dllPath.CStr() : shadowStr.c_str();
 
-        if (state.m_gameplay.Load(loadPath))
+        hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: attempting load of {}", loadPath);
+        const bool loaded = state.m_gameplay.Load(loadPath);
+        hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: Load returned {}", loaded ? "true" : "false");
+        if (loaded)
         {
             if (!state.m_gameplay.Register(*ctx.m_world))
                 hive::LogWarning(LOG_LAUNCHER, "Gameplay DLL Register() failed");
         }
         else
         {
-            hive::LogWarning(LOG_LAUNCHER, "Failed to load gameplay DLL: {}", state.m_gameplay.GetError());
+            hive::LogError(LOG_LAUNCHER, "Failed to load gameplay DLL. Auto-rebuild attempted={}",
+                           state.m_gameplayAutoRebuildAttempted ? "true" : "false");
+            if (!state.m_gameplayAutoRebuildAttempted)
+            {
+                state.m_gameplayAutoRebuildAttempted = true;
+                state.m_gameplayBuildRequested = true;
+                hive::LogError(LOG_LAUNCHER, "Triggering automatic gameplay module rebuild...");
+            }
         }
     }
 
-    bool OpenProject(waggle::EngineContext& ctx, LauncherState& state, const std::filesystem::path& requestedPath)
+    namespace
+    {
+        void ReportProgress(BootProgressFn progress, void* userdata, const char* step, uint32_t current,
+                            uint32_t total)
+        {
+            if (progress != nullptr)
+            {
+                progress(step, current, total, userdata);
+            }
+        }
+
+        constexpr uint32_t kAssetsStampMagic = 0x53415348u; // "HSAS"
+        constexpr uint32_t kAssetsStampEngineRev = 2u;
+
+        struct AssetsStamp
+        {
+            uint32_t m_magic{};
+            uint32_t m_engineRev{};
+            uint64_t m_fileCount{};
+            uint64_t m_totalSize{};
+            int64_t m_maxMtimeNs{};
+        };
+
+        AssetsStamp ComputeAssetsStamp(const std::filesystem::path& assetsDir)
+        {
+            AssetsStamp stamp{};
+            stamp.m_magic = kAssetsStampMagic;
+            stamp.m_engineRev = kAssetsStampEngineRev;
+
+            std::error_code ec;
+            for (const auto& entry : std::filesystem::recursive_directory_iterator{assetsDir, ec})
+            {
+                if (ec || !entry.is_regular_file())
+                {
+                    continue;
+                }
+                std::error_code sizeEc;
+                const auto size = entry.file_size(sizeEc);
+                if (!sizeEc)
+                {
+                    stamp.m_totalSize += static_cast<uint64_t>(size);
+                }
+
+                std::error_code timeEc;
+                const auto mtime = entry.last_write_time(timeEc);
+                if (!timeEc)
+                {
+                    const auto ns =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(mtime.time_since_epoch()).count();
+                    if (ns > stamp.m_maxMtimeNs)
+                    {
+                        stamp.m_maxMtimeNs = ns;
+                    }
+                }
+                ++stamp.m_fileCount;
+            }
+            return stamp;
+        }
+
+        bool ReadAssetsStamp(const std::filesystem::path& path, AssetsStamp& out)
+        {
+            hive::FileMapping mapping{};
+            if (!mapping.Open(path.string().c_str()) || mapping.Size() != sizeof(AssetsStamp))
+            {
+                return false;
+            }
+            std::memcpy(&out, mapping.Data(), sizeof(AssetsStamp));
+            return out.m_magic == kAssetsStampMagic;
+        }
+
+        // No hive::FileMapping equivalent for writes yet — std::fopen is the engine fallback for
+        // small launcher-local artifacts. Brood lives in the std-tolerant zone (see CODE_REVIEW.md).
+        bool WriteAssetsStamp(const std::filesystem::path& path, const AssetsStamp& stamp)
+        {
+            std::error_code ec;
+            std::filesystem::create_directories(path.parent_path(), ec);
+            FILE* file = nullptr;
+#ifdef _MSC_VER
+            fopen_s(&file, path.string().c_str(), "wb");
+#else
+            file = std::fopen(path.string().c_str(), "wb");
+#endif
+            if (file == nullptr)
+            {
+                return false;
+            }
+            const size_t written = std::fwrite(&stamp, 1, sizeof(stamp), file);
+            std::fclose(file);
+            return written == sizeof(stamp);
+        }
+
+        bool AssetsStampsMatch(const AssetsStamp& lhs, const AssetsStamp& rhs)
+        {
+            return lhs.m_magic == rhs.m_magic && lhs.m_engineRev == rhs.m_engineRev &&
+                   lhs.m_fileCount == rhs.m_fileCount && lhs.m_totalSize == rhs.m_totalSize &&
+                   lhs.m_maxMtimeNs == rhs.m_maxMtimeNs;
+        }
+    } // namespace
+
+    bool OpenProject(waggle::EngineContext& ctx, LauncherState& state, const std::filesystem::path& requestedPath,
+                     BootProgressFn progress, void* progressUd)
     {
         if (state.m_project == nullptr)
         {
@@ -203,72 +319,151 @@ namespace brood::launcher
 
         if (std::filesystem::is_directory(projectAssetsDir))
         {
-            wax::Vector<nectar::AssetId> shaderAssets{comb::GetDefaultAllocator()};
-            wax::Vector<nectar::AssetId> otherAssets{comb::GetDefaultAllocator()};
-            std::error_code ec;
-            for (const auto& entry : std::filesystem::recursive_directory_iterator{projectAssetsDir, ec})
+            const auto scanStart = std::chrono::steady_clock::now();
+            const std::filesystem::path stampPath =
+                std::filesystem::path{projectPath.CStr()}.parent_path() / ".hive" / "import_stamp.bin";
+            const AssetsStamp currentStamp = ComputeAssetsStamp(projectAssetsDir);
+            AssetsStamp cachedStamp{};
+            const bool stampHit = ReadAssetsStamp(stampPath, cachedStamp) &&
+                                  AssetsStampsMatch(currentStamp, cachedStamp);
+
+            if (stampHit)
             {
-                if (ec || !entry.is_regular_file())
-                    continue;
-                auto ext = entry.path().extension().string();
-                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
-                const bool isShader = (ext == ".hlsl");
-                const bool isShaderProgram = (ext == ".hshader");
-                const bool isMaterial = (ext == ".hmat");
-                const bool isTexture = (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tga" ||
-                                        ext == ".bmp" || ext == ".hdr");
-                if (!isShader && !isShaderProgram && !isMaterial && !isTexture)
-                    continue;
-                auto relPath = std::filesystem::relative(entry.path(), projectAssetsDir, ec).generic_string();
-                if (ec || relPath.empty())
-                    continue;
-                nectar::AssetId id = nectar::AssetIdFromPath(relPath.c_str());
-                if (isTexture)
+                hive::LogInfo(LOG_LAUNCHER, "Assets stamp hit (files={}, size={} bytes); skipping scan",
+                              currentStamp.m_fileCount, currentStamp.m_totalSize);
+                ReportProgress(progress, progressUd, "Scanning assets",
+                               static_cast<uint32_t>(currentStamp.m_fileCount),
+                               static_cast<uint32_t>(currentStamp.m_fileCount));
+            }
+            else
+            {
+                struct Candidate
                 {
-                    nectar::HiveIdData hid{};
-                    const auto hiveidPath = entry.path().string() + ".hiveid";
-                    if (nectar::ReadHiveId(hiveidPath.c_str(), hid, comb::GetDefaultAllocator()) &&
-                        hid.m_guid.IsValid())
+                    std::string m_relPath;
+                    std::string m_absPath;
+                    bool m_isShader{};
+                    bool m_isTexture{};
+                };
+
+                std::vector<Candidate> candidates;
+                candidates.reserve(256);
+                {
+                    std::error_code ec;
+                    for (const auto& entry : std::filesystem::recursive_directory_iterator{projectAssetsDir, ec})
                     {
-                        id = hid.m_guid;
+                        if (ec || !entry.is_regular_file())
+                        {
+                            continue;
+                        }
+                        auto ext = entry.path().extension().string();
+                        std::transform(ext.begin(), ext.end(), ext.begin(),
+                                       [](unsigned char c) { return std::tolower(c); });
+                        const bool isShader = (ext == ".hlsl");
+                        const bool isShaderProgram = (ext == ".hshader");
+                        const bool isMaterial = (ext == ".hmat");
+                        const bool isTexture = (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".tga" ||
+                                                ext == ".bmp" || ext == ".hdr");
+                        if (!isShader && !isShaderProgram && !isMaterial && !isTexture)
+                        {
+                            continue;
+                        }
+                        auto relPath =
+                            std::filesystem::relative(entry.path(), projectAssetsDir, ec).generic_string();
+                        if (ec || relPath.empty())
+                        {
+                            continue;
+                        }
+                        Candidate candidate;
+                        candidate.m_relPath = std::move(relPath);
+                        candidate.m_absPath = entry.path().string();
+                        candidate.m_isShader = isShader;
+                        candidate.m_isTexture = isTexture;
+                        candidates.push_back(std::move(candidate));
                     }
                 }
-                const bool needsImport = !state.m_project->Database().Contains(id) ||
-                                         state.m_project->Import().NeedsReimport(id);
-                if (needsImport)
+
+                const uint32_t scanTotal = static_cast<uint32_t>(candidates.size());
+                ReportProgress(progress, progressUd, "Scanning assets", 0, scanTotal);
+
+                wax::Vector<nectar::AssetId> shaderAssets{comb::GetDefaultAllocator()};
+                wax::Vector<nectar::AssetId> otherAssets{comb::GetDefaultAllocator()};
+                for (uint32_t i = 0; i < candidates.size(); ++i)
                 {
-                    nectar::ImportRequest req;
-                    req.m_sourcePath = wax::StringView{relPath.c_str(), relPath.size()};
-                    req.m_assetId = id;
-                    const auto output = state.m_project->Import().ImportAsset(req);
-                    if (!output.m_success)
+                    const auto& candidate = candidates[i];
+                    // Throttle progress callbacks: each one invokes processEvents which is
+                    // expensive at scan-frequency on large asset trees.
+                    if ((i & 0xF) == 0)
                     {
-                        hive::LogWarning(LOG_LAUNCHER, "Auto-import failed for '{}': {}", relPath,
-                                         output.m_errorMessage.CStr());
-                        continue;
+                        ReportProgress(progress, progressUd, "Scanning assets", i, scanTotal);
+                    }
+
+                    nectar::AssetId id = nectar::AssetIdFromPath(candidate.m_relPath.c_str());
+                    if (candidate.m_isTexture)
+                    {
+                        nectar::HiveIdData hid{};
+                        const auto hiveidPath = candidate.m_absPath + ".hiveid";
+                        if (nectar::ReadHiveId(hiveidPath.c_str(), hid, comb::GetDefaultAllocator()) &&
+                            hid.m_guid.IsValid())
+                        {
+                            id = hid.m_guid;
+                        }
+                    }
+                    const bool needsImport = !state.m_project->Database().Contains(id) ||
+                                             state.m_project->Import().NeedsReimport(id);
+                    if (needsImport)
+                    {
+                        nectar::ImportRequest req;
+                        req.m_sourcePath = wax::StringView{candidate.m_relPath.c_str(), candidate.m_relPath.size()};
+                        req.m_assetId = id;
+                        const auto output = state.m_project->Import().ImportAsset(req);
+                        if (!output.m_success)
+                        {
+                            hive::LogWarning(LOG_LAUNCHER, "Auto-import failed for '{}': {}",
+                                             candidate.m_relPath, output.m_errorMessage.CStr());
+                            continue;
+                        }
+                    }
+                    if (candidate.m_isShader)
+                    {
+                        shaderAssets.PushBack(id);
+                    }
+                    else
+                    {
+                        otherAssets.PushBack(id);
                     }
                 }
-                if (isShader)
-                    shaderAssets.PushBack(id);
-                else
-                    otherAssets.PushBack(id);
+                ReportProgress(progress, progressUd, "Scanning assets", scanTotal, scanTotal);
+
+                const size_t totalImported = shaderAssets.Size() + otherAssets.Size();
+                if (totalImported > 0)
+                {
+                    hive::LogInfo(LOG_LAUNCHER, "Auto-imported {} project asset(s)", totalImported);
+                    wax::Vector<nectar::AssetId> all{comb::GetDefaultAllocator()};
+                    for (size_t i = 0; i < shaderAssets.Size(); ++i)
+                    {
+                        all.PushBack(shaderAssets[i]);
+                    }
+                    for (size_t i = 0; i < otherAssets.Size(); ++i)
+                    {
+                        all.PushBack(otherAssets[i]);
+                    }
+                    const uint32_t cookTotal = static_cast<uint32_t>(all.Size());
+                    ReportProgress(progress, progressUd, "Cooking assets", 0, cookTotal);
+                    nectar::CookRequest req;
+                    req.m_assets = static_cast<wax::Vector<nectar::AssetId>&&>(all);
+                    req.m_platform = wax::StringView{"pc"};
+                    req.m_workerCount = 1;
+                    (void)state.m_project->Cook().CookAll(req);
+                    ReportProgress(progress, progressUd, "Cooking assets", cookTotal, cookTotal);
+                    state.m_project->SaveImportCache();
+                }
+
+                (void)WriteAssetsStamp(stampPath, currentStamp);
             }
-            const size_t totalImported = shaderAssets.Size() + otherAssets.Size();
-            if (totalImported > 0)
-            {
-                hive::LogInfo(LOG_LAUNCHER, "Auto-imported {} project asset(s)", totalImported);
-                wax::Vector<nectar::AssetId> all{comb::GetDefaultAllocator()};
-                for (size_t i = 0; i < shaderAssets.Size(); ++i)
-                    all.PushBack(shaderAssets[i]);
-                for (size_t i = 0; i < otherAssets.Size(); ++i)
-                    all.PushBack(otherAssets[i]);
-                nectar::CookRequest req;
-                req.m_assets = static_cast<wax::Vector<nectar::AssetId>&&>(all);
-                req.m_platform = wax::StringView{"pc"};
-                req.m_workerCount = 1;
-                (void)state.m_project->Cook().CookAll(req);
-                state.m_project->SaveImportCache();
-            }
+            const auto scanEnd = std::chrono::steady_clock::now();
+            const double scanMs = std::chrono::duration<double, std::milli>(scanEnd - scanStart).count();
+            hive::LogInfo(LOG_LAUNCHER, "Asset scan + import + cook completed in {:.1f} ms (stamp {})", scanMs,
+                          stampHit ? "hit" : "miss");
         }
 
 #if HIVE_MODE_EDITOR
@@ -279,15 +474,29 @@ namespace brood::launcher
         const wax::StringView startupScene = state.m_project->Project().StartupSceneRelative();
         if (!startupScene.IsEmpty())
         {
+            ReportProgress(progress, progressUd, "Loading scene", 0, 1);
             const std::filesystem::path startupScenePath = ResolveScenePath(*state.m_project, startupScene);
             if (!LoadEditorScene(ctx, state, startupScenePath))
             {
                 hive::LogWarning(LOG_LAUNCHER, "Failed to load startup scene: {}", startupScenePath.generic_string());
             }
+            ReportProgress(progress, progressUd, "Loading scene", 1, 1);
+
+            if (ctx.m_renderModule != nullptr)
+            {
+                const auto preloadStart = std::chrono::steady_clock::now();
+                ctx.m_renderModule->PreloadScene(*ctx.m_world, state.m_project, progress, progressUd);
+                const auto preloadEnd = std::chrono::steady_clock::now();
+                const double preloadMs =
+                    std::chrono::duration<double, std::milli>(preloadEnd - preloadStart).count();
+                hive::LogInfo(LOG_LAUNCHER, "Scene preload completed in {:.1f} ms", preloadMs);
+            }
         }
         QueueSceneRecoveryPrompt(state);
 #endif
+        ReportProgress(progress, progressUd, "Loading gameplay module", 0, 1);
         TryLoadGameplayModule(ctx, state);
+        ReportProgress(progress, progressUd, "Loading gameplay module", 1, 1);
 
 #if HIVE_MODE_EDITOR
         SetHubStatus(state.m_hub, false, "Project ready.");
@@ -302,7 +511,8 @@ namespace brood::launcher
     }
 
 #if HIVE_MODE_EDITOR
-    bool CreateProjectFromHub(waggle::EngineContext& ctx, LauncherState& state)
+    bool CreateProjectFromHub(waggle::EngineContext& ctx, LauncherState& state, BootProgressFn progress,
+                              void* progressUd)
     {
         ProjectHubState& hub = state.m_hub;
         const wax::String projectName = TrimmedCopy(hub.m_createName.Data());
@@ -383,7 +593,7 @@ namespace brood::launcher
         CopyStringToBuffer(wax::String{(targetRoot / "project.hive").generic_string().c_str()}, hub.m_openPath.Data(),
                            hub.m_openPath.Size());
 
-        return OpenProject(ctx, state, targetRoot / "project.hive");
+        return OpenProject(ctx, state, targetRoot / "project.hive", progress, progressUd);
     }
 #endif
 
