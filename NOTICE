@@ -14,6 +14,9 @@ respective extern/ directories, each with their own license:
 - cgltf (MIT) — Nectar/extern/cgltf/
 - LZ4 (BSD 2-Clause) — Nectar/extern/lz4/
 - Zstd (BSD 3-Clause) — Nectar/extern/zstd/
+- bc7enc (MIT / Public Domain) — Nectar/extern/bc7enc/
+  Source: https://github.com/richgel999/bc7enc_rdo
+  Only bc7enc.h and bc7enc.cpp are vendored (BC7 encoder).
 - Tracy (BSD 3-Clause) — Hive/extern/tracy/
 - Qt 6 (LGPL v3) — Forge/extern/qtbase/
   Source code: https://code.qt.io/cgit/qt/qtbase.git/

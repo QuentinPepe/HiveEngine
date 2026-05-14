@@ -34,6 +34,7 @@ target_precompile_headers(Nectar
 
 target_include_directories(Nectar
     SYSTEM PRIVATE
+        extern/bc7enc
         extern/cgltf
         extern/lz4
         extern/stb
@@ -53,8 +54,10 @@ if(MSVC)
     target_compile_definitions(Nectar PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
-# External libraries (LZ4, Zstd) — compiled as C++ since no C compiler in preset
+# LZ4/Zstd ship as .c — force CXX so they compile under the engine's C++-only preset.
+# bc7enc is already C++; sharing the property block keeps vendor-warning settings uniform.
 set(NECTAR_EXTERN_SOURCES
+    extern/bc7enc/bc7enc.cpp
     extern/lz4/lz4.c
     extern/zstd/zstd.c
 )
