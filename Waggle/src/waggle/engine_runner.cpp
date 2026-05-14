@@ -170,11 +170,13 @@ namespace
             m_rendererInitialized = true;
             m_context.m_renderContext = m_renderContext;
 
-            m_renderModule = comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), m_renderContext);
+            m_renderModule = comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), m_renderContext,
+                                                              m_context.m_jobs);
             if (m_renderModule != nullptr && !m_renderModule->IsReady())
             {
                 hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
             }
+            m_context.m_renderModule = m_renderModule;
             m_app.GetWorld().InsertResource(waggle::RenderResource{m_renderModule, m_renderContext});
             return true;
         }
@@ -228,11 +230,18 @@ namespace
             {
                 return;
             }
-            m_renderModule = comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), renderContext);
+            if (m_context.m_renderModule != nullptr)
+            {
+                m_renderModule = m_context.m_renderModule;
+                return;
+            }
+            m_renderModule = comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), renderContext,
+                                                              m_context.m_jobs);
             if (m_renderModule != nullptr && !m_renderModule->IsReady())
             {
                 hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
             }
+            m_context.m_renderModule = m_renderModule;
             m_app.GetWorld().InsertResource(waggle::RenderResource{m_renderModule, renderContext});
         }
 
@@ -615,6 +624,18 @@ namespace waggle
         }
 
         ctx.m_renderContext = renderCtx;
+
+        if (ctx.m_renderModule == nullptr && ctx.m_world != nullptr)
+        {
+            auto* renderModule =
+                comb::New<waggle::RenderModule>(comb::GetDefaultAllocator(), renderCtx, ctx.m_jobs);
+            if (renderModule != nullptr && !renderModule->IsReady())
+            {
+                hive::LogWarning(LOG_ENGINE, "RenderModule failed to initialize; mesh rendering disabled");
+            }
+            ctx.m_renderModule = renderModule;
+            ctx.m_world->InsertResource(waggle::RenderResource{renderModule, renderCtx});
+        }
         return true;
     }
 

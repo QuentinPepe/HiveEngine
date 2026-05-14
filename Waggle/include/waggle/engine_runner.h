@@ -19,6 +19,8 @@ namespace swarm
 
 namespace waggle
 {
+    class RenderModule;
+
     struct EngineConfig
     {
         const char* m_windowTitle{"HiveEngine"};
@@ -43,6 +45,7 @@ namespace waggle
         queen::World* m_world{nullptr};
         terra::WindowContext* m_window{nullptr};
         swarm::RenderContext* m_renderContext{nullptr};
+        waggle::RenderModule* m_renderModule{nullptr};
         drone::JobSubmitter m_jobs{};
     };
 
