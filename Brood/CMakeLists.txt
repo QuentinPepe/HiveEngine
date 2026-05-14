@@ -41,6 +41,7 @@ endfunction()
 
 add_executable(hive_launcher
     src/hive_launcher.cpp
+    src/launcher/editor_camera_state.cpp
     src/launcher/gltf_import_job.cpp
     src/launcher/launcher_platform.cpp
     src/launcher/launcher_scene.cpp

@@ -12,6 +12,8 @@
 #include <queen/reflect/world_serializer.h>
 #include <queen/world/world.h>
 
+#include <propolis/runtime/propolis_script.h>
+
 #include <nectar/hive/hive_document.h>
 #include <nectar/hive/hive_parser.h>
 #include <nectar/hive/hive_writer.h>
@@ -20,6 +22,7 @@
 
 #include <waggle/components/camera.h>
 #include <waggle/components/editor_camera.h>
+#include <waggle/components/editor_grid.h>
 #include <waggle/components/editor_only.h>
 #include <waggle/components/lighting.h>
 #include <waggle/components/mesh_reference.h>
@@ -29,6 +32,8 @@
 #include <waggle/time.h>
 
 #include <forge/scene_file.h>
+
+#include <launcher/editor_camera_state.h>
 
 #include <cstdio>
 #include <memory>
@@ -52,6 +57,8 @@ namespace brood::launcher
             registry.Register<waggle::Name>();
         if (!registry.Contains<waggle::MeshReference>())
             registry.Register<waggle::MeshReference>();
+        if (!registry.Contains<propolis::PropolisScript>())
+            registry.Register<propolis::PropolisScript>();
     }
 
     void SpawnEditorBaseCamera(queen::World& world)
@@ -59,13 +66,26 @@ namespace brood::launcher
         const hive::math::Float3 position{0.f, 5.f, 25.f};
         const hive::math::Mat4 cameraWorld = hive::math::Translation(position);
         waggle::EditorCameraController controller{};
-        controller.m_moveSpeed = 50.f;
         (void)world.Spawn(waggle::Name{wax::FixedString{"Editor Camera"}},
                           waggle::Transform{position, hive::math::Quat{}, hive::math::Float3{1.f, 1.f, 1.f}},
                           waggle::WorldMatrix{cameraWorld},
                           waggle::TransformVersion{},
-                          waggle::Camera{hive::math::Radians(60.f), 0.1f, 5000.f},
+                          waggle::Camera{hive::math::Radians(50.f), 0.05f, 100000.f},
                           std::move(controller),
+                          waggle::EditorOnly{});
+    }
+
+    void SpawnEditorGrid(queen::World& world)
+    {
+        constexpr float kGridSpan = 2000.f;
+        const hive::math::Float3 position{};
+        const hive::math::Float3 scale{kGridSpan, 1.f, kGridSpan};
+        const hive::math::Mat4 worldMatrix = hive::math::TRS(position, hive::math::Quat{}, scale);
+        (void)world.Spawn(waggle::Name{wax::FixedString{"Editor Grid"}},
+                          waggle::Transform{position, hive::math::Quat{}, scale},
+                          waggle::WorldMatrix{worldMatrix},
+                          waggle::TransformVersion{},
+                          waggle::EditorGrid{},
                           waggle::EditorOnly{});
     }
 
@@ -576,6 +596,9 @@ namespace brood::launcher
         state.m_sceneAutosaveElapsedSeconds = 0.0;
         state.m_sceneDirty = false;
         ClearSceneRecoveryArtifacts(state);
+
+        (void)SaveEditorCameraState(*ctx.m_world, state, scenePath);
+
         hive::LogInfo(LOG_LAUNCHER, "Scene saved: {}", scenePathGeneric.CStr());
         return true;
     }
@@ -702,6 +725,8 @@ namespace brood::launcher
         state.m_currentSceneRelative = MakeSceneRelativePath(*state.m_project, scenePath);
         state.m_sceneAutosaveElapsedSeconds = 0.0;
         state.m_sceneDirty = false;
+
+        (void)LoadEditorCameraState(*ctx.m_world, state, scenePath);
         return true;
     }
 
@@ -740,7 +765,7 @@ namespace brood::launcher
             return;
         }
 
-        if (state.m_playState != forge::PlayState::EDITING)
+        if (state.m_playState != waggle::PlayState::EDITING)
         {
             return;
         }

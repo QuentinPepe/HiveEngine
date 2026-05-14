@@ -9,6 +9,7 @@
 
 #include <drone/job_system.h>
 
+#include <waggle/play_state.h>
 #include <waggle/project/gameplay_module.h>
 #include <waggle/project/project_manager.h>
 
@@ -132,13 +133,15 @@ namespace brood::launcher
         bool m_exitAfterSetup{false};
         bool m_projectOpen{false};
         bool m_pendingDllReload{false};
+        bool m_gameplayBuildRequested{false};
+        bool m_gameplayAutoRebuildAttempted{false};
 
 #if HIVE_MODE_EDITOR
         ProjectHubState m_hub;
         forge::EditorSelection m_selection;
 
         forge::GizmoState m_gizmo;
-        forge::PlayState m_playState{forge::PlayState::EDITING};
+        waggle::PlayState m_playState{waggle::PlayState::EDITING};
         queen::ComponentRegistry<256> m_componentRegistry;
         wax::String m_assetsRoot;
         wax::String m_currentSceneRelative;
