@@ -90,6 +90,8 @@ namespace swarm
         RGBA8_UNORM = 0,
         RGBA8_SRGB = 1,
         R8_UNORM = 2,
+        BC7_UNORM = 3,
+        BC7_UNORM_SRGB = 4,
     };
 
     enum class SamplerFilter : uint8_t
