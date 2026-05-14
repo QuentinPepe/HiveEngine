@@ -71,6 +71,7 @@ namespace forge
                 layout->addWidget(inspector);
                 connect(inspector, &EntityInspector::sceneModified, this, &InspectorPanel::sceneModified);
                 connect(inspector, &EntityInspector::entityLabelChanged, this, &InspectorPanel::entityLabelChanged);
+                connect(inspector, &EntityInspector::componentsChanged, this, &InspectorPanel::componentsChanged);
                 break;
             }
             case SelectionKind::ASSET: {

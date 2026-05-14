@@ -17,6 +17,8 @@ target_sources(Forge
         src/forge/blueprint_pin.cpp
         src/forge/blueprint_connection.cpp
         src/forge/blueprint_node_palette.cpp
+        src/forge/add_component_popup.cpp
+        include/forge/add_component_popup.h
         include/forge/blueprint_panel.h
         include/forge/blueprint_editor.h
         include/forge/blueprint_node.h

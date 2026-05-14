@@ -6,6 +6,7 @@
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLocale>
 #include <QWidget>
 
 #include <cmath>
@@ -69,7 +70,10 @@ namespace forge
     [[nodiscard]] inline QDoubleSpinBox* MakeDoubleSpinBox(double value, double step = 0.01)
     {
         auto* spin = new QDoubleSpinBox;
-        spin->setDecimals(4);
+        QLocale dotLocale{QLocale::C};
+        dotLocale.setNumberOptions(QLocale::RejectGroupSeparator | QLocale::OmitGroupSeparator);
+        spin->setLocale(dotLocale);
+        spin->setDecimals(6);
         spin->setSingleStep(step);
         spin->setMinimum(-1e9);
         spin->setMaximum(1e9);
@@ -102,7 +106,7 @@ namespace forge
             hbox->addWidget(spin, 1);
 
             QObject::connect(spin, &QDoubleSpinBox::editingFinished, container,
-                             [spin, axis, cb = std::forward<Callback>(onChanged)]() {
+                             [spin, axis, cb = onChanged]() {
                                  cb(axis, static_cast<float>(spin->value()));
                              });
         }

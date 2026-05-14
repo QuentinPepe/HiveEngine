@@ -29,7 +29,7 @@ namespace forge
         double floatMin{-1e9};
         double floatMax{1e9};
         double floatStep{0.1};
-        int floatDecimals{4};
+        int floatDecimals{6};
         int intMin{-999999};
         int intMax{999999};
         QStringList enumValues;

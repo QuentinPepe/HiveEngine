@@ -1,9 +1,28 @@
 #include <queen/world/world.h>
 
+#include <waggle/components/transform.h>
+#include <waggle/time.h>
+
 #include <forge/entity_inspector_helpers.h>
 
 namespace forge
 {
+    void NotifyComponentChanged(queen::World& world, queen::Entity entity, queen::TypeId typeId)
+    {
+        if (typeId != queen::TypeIdOf<waggle::Transform>())
+            return;
+        auto* version = world.Get<waggle::TransformVersion>(entity);
+        if (version == nullptr)
+            return;
+        // The inspector runs from Qt's event loop, between sim ticks. We can't predict
+        // whether time->m_tick has already been advanced for the next pass, so bump one
+        // ahead — guarantees the dirty equality fires on the next transform_system pass.
+        if (auto* time = world.Resource<waggle::Time>(); time != nullptr)
+            version->m_lastModified = time->m_tick + 1;
+        else
+            ++version->m_lastModified;
+    }
+
     void CommitIfChanged(SnapshotState& state, EditorUndoManager& undo, queen::World& world,
                          const void* current)
     {
@@ -22,18 +41,25 @@ namespace forge
             auto typeId = state.m_typeId;
             auto offset = state.m_offset;
             auto size = state.m_size;
+            NotifyComponentChanged(world, entity, typeId);
             undo.Push(
                 [&world, entity, typeId, offset, size, beforeData]() {
                     void* comp = world.GetComponentRaw(entity, typeId);
                     if (comp != nullptr)
+                    {
                         std::memcpy(static_cast<std::byte*>(comp) + offset,
                                     beforeData->data(), size);
+                        NotifyComponentChanged(world, entity, typeId);
+                    }
                 },
                 [&world, entity, typeId, offset, size, afterData]() {
                     void* comp = world.GetComponentRaw(entity, typeId);
                     if (comp != nullptr)
+                    {
                         std::memcpy(static_cast<std::byte*>(comp) + offset,
                                     afterData->data(), size);
+                        NotifyComponentChanged(world, entity, typeId);
+                    }
                 });
         }
         state.m_size = 0;

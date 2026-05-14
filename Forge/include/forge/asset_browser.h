@@ -107,6 +107,8 @@ namespace forge
         void sceneOpenRequested(const QString& path);
         void assetOpenRequested(const QString& path, AssetType type);
         void assetSelected(const QString& path, AssetType type);
+        void assetRenamed(const QString& oldPath, const QString& newPath);
+        void assetDeleted(const QString& path);
 
     protected:
         void keyPressEvent(QKeyEvent* event) override;

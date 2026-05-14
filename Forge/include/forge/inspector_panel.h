@@ -31,5 +31,6 @@ namespace forge
         void sceneModified();
         void entityLabelChanged(queen::Entity entity);
         void browseToAsset(const QString& path);
+        void componentsChanged();
     };
 } // namespace forge

@@ -9,6 +9,7 @@
 
 #include <waggle/components/editor_only.h>
 #include <waggle/components/transform.h>
+#include <waggle/time.h>
 
 #include <forge/forge_module.h>
 
@@ -105,6 +106,10 @@ namespace forge
                 needWorldMatrix.PushBack(archetype.GetEntity(row));
             }
         });
+
+        const auto* time = world.Resource<waggle::Time>();
+        const uint64_t dirtyTick = time != nullptr ? time->m_tick + 1 : 1;
+
         for (queen::Entity entity : needWorldMatrix)
         {
             auto* transform = world.Get<waggle::Transform>(entity);
@@ -114,7 +119,14 @@ namespace forge
                                                                   transform->m_scale)
                                                 : hive::math::Mat4::Identity();
             world.Add(entity, waggle::WorldMatrix{matrix});
-            world.Add(entity, waggle::TransformVersion{});
+            world.Add(entity, waggle::TransformVersion{dirtyTick});
         }
+
+        // Existing Transform-bearing entities also need their hierarchy re-resolved so the
+        // next transform_system pass propagates parent scales/positions to children.
+        world.Query<queen::Write<waggle::TransformVersion>, queen::Read<waggle::Transform>>().Each(
+            [&](waggle::TransformVersion& version, const waggle::Transform&) {
+                version.m_lastModified = dirtyTick;
+            });
     }
 } // namespace forge

@@ -43,6 +43,8 @@ namespace forge
     void CommitIfChanged(SnapshotState& state, EditorUndoManager& undo, queen::World& world,
                          const void* current);
 
+    void NotifyComponentChanged(queen::World& world, queen::Entity entity, queen::TypeId typeId);
+
     bool AreFieldValuesUniform(queen::World& world, const wax::Vector<queen::Entity>& entities,
                                queen::TypeId typeId, uint16_t fieldOffset, uint16_t fieldSize);
 
@@ -60,6 +62,7 @@ namespace forge
             auto* ptr = reinterpret_cast<T*>(static_cast<std::byte*>(comp) + fieldOffset);
             beforeSnapshots->push_back({entities[i], *ptr});
             *ptr = newValue;
+            NotifyComponentChanged(world, entities[i], typeId);
         }
 
         auto capturedEntities = std::make_shared<wax::Vector<queen::Entity>>(entities);
@@ -69,7 +72,10 @@ namespace forge
                 {
                     void* comp = world.GetComponentRaw(e, typeId);
                     if (comp != nullptr)
+                    {
                         *reinterpret_cast<T*>(static_cast<std::byte*>(comp) + fieldOffset) = before;
+                        NotifyComponentChanged(world, e, typeId);
+                    }
                 }
             },
             [&world, typeId, fieldOffset, newValue, capturedEntities] {
@@ -77,7 +83,10 @@ namespace forge
                 {
                     void* comp = world.GetComponentRaw((*capturedEntities)[i], typeId);
                     if (comp != nullptr)
+                    {
                         *reinterpret_cast<T*>(static_cast<std::byte*>(comp) + fieldOffset) = newValue;
+                        NotifyComponentChanged(world, (*capturedEntities)[i], typeId);
+                    }
                 }
             });
     }

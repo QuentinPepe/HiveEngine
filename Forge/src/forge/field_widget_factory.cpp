@@ -9,6 +9,7 @@
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLocale>
 #include <QPushButton>
 #include <QSpinBox>
 
@@ -18,6 +19,9 @@ namespace forge
                                       std::function<void(const QString&)> onChange, QWidget* parent)
     {
         auto* spin = new QDoubleSpinBox{parent};
+        QLocale dotLocale{QLocale::C};
+        dotLocale.setNumberOptions(QLocale::RejectGroupSeparator | QLocale::OmitGroupSeparator);
+        spin->setLocale(dotLocale);
         spin->setRange(opts.floatMin, opts.floatMax);
         spin->setDecimals(opts.floatDecimals);
         spin->setSingleStep(opts.floatStep);

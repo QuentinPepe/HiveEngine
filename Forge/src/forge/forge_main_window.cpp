@@ -17,6 +17,7 @@
 #include <forge/console_panel.h>
 #include <forge/editor_undo.h>
 #include <forge/forge_main_window.h>
+#include <forge/gizmo_interaction.h>
 #include <forge/hierarchy_panel.h>
 #include <forge/inspector_panel.h>
 #include <forge/progress_overlay.h>
@@ -347,6 +348,11 @@ namespace forge
         m_hub->hide();
 
         m_editorUndo = new EditorUndoManager{};
+        m_gizmoBridge = new GizmoInteractionBridge{};
+        if (m_world != nullptr && m_selection != nullptr)
+        {
+            m_gizmoBridge->SetContext(m_world, m_selection, m_editorUndo);
+        }
 
         CreateMenus();
 
@@ -454,6 +460,17 @@ namespace forge
         {
             bridge->PollKeyboard();
         }
+    }
+
+    void ForgeMainWindow::TickGizmoInteraction()
+    {
+        if (m_gizmoBridge == nullptr || m_viewport == nullptr)
+        {
+            return;
+        }
+        const float viewportWidth = static_cast<float>(m_viewport->width());
+        const float viewportHeight = static_cast<float>(m_viewport->height());
+        m_gizmoBridge->Tick(viewportWidth, viewportHeight);
     }
 
     void ForgeMainWindow::CreateMenus()
@@ -627,6 +644,8 @@ namespace forge
             emit sceneModified();
         });
 
+        connect(m_inspector, &InspectorPanel::componentsChanged, this, [this] { RefreshAll(); });
+
         connect(m_inspector, &InspectorPanel::entityLabelChanged, this,
                 [this](queen::Entity entity) { m_hierarchy->RefreshEntityItem(entity); });
 
@@ -649,6 +668,8 @@ namespace forge
         connect(m_toolbar, &EditorToolbar::buildPressed, this, &ForgeMainWindow::buildRequested);
 
         connect(m_assetBrowser, &AssetBrowserPanel::sceneOpenRequested, this, &ForgeMainWindow::sceneOpenRequested);
+        connect(m_assetBrowser, &AssetBrowserPanel::assetRenamed, this, &ForgeMainWindow::assetRenamed);
+        connect(m_assetBrowser, &AssetBrowserPanel::assetDeleted, this, &ForgeMainWindow::assetDeleted);
 
         connect(m_assetBrowser, &AssetBrowserPanel::assetImported, this, [this](const QString& path) {
             std::filesystem::path fsPath{path.toStdString()};

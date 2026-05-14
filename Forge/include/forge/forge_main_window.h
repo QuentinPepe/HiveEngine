@@ -31,6 +31,7 @@ namespace forge
     class EditorSelection;
     class EditorToolbar;
     class EditorUndoManager;
+    class GizmoInteractionBridge;
     class HierarchyPanel;
     class InspectorPanel;
     class ProgressOverlay;
@@ -68,6 +69,8 @@ namespace forge
         void HideBootProgress();
 
         EditorToolbar* Toolbar();
+        [[nodiscard]] GizmoInteractionBridge* GizmoBridge() const { return m_gizmoBridge; }
+        void TickGizmoInteraction();
 
     protected:
         void closeEvent(QCloseEvent* event) override;
@@ -84,6 +87,8 @@ namespace forge
         void sceneOpenRequested(const QString& path);
         void sceneModified();
         void buildRequested();
+        void assetRenamed(const QString& oldPath, const QString& newPath);
+        void assetDeleted(const QString& path);
 
     public slots:
         void OpenBlueprint(const QString& filePath);
@@ -112,6 +117,7 @@ namespace forge
         QWidget* m_loadingWidget{};
         ProgressOverlay* m_progressOverlay{};
         EditorUndoManager* m_editorUndo{};
+        GizmoInteractionBridge* m_gizmoBridge{};
         bool m_inspectorLocked{false};
         QList<class QDockWidget*> m_docks;
         QString m_sceneName;

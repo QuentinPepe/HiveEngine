@@ -21,6 +21,7 @@ namespace forge
 {
     class EditorSelection;
     class EditorUndoManager;
+    class InspectorPanel;
 
     class EntityInspector : public QWidget
     {
@@ -33,6 +34,7 @@ namespace forge
     signals:
         void sceneModified();
         void entityLabelChanged(queen::Entity entity);
+        void componentsChanged();
 
     private:
         struct FieldContext
@@ -69,6 +71,21 @@ namespace forge
         QWidget* BuildMultiEnumFieldWidget(const queen::FieldInfo& field, void* fieldData,
                                             const MultiFieldContext& ctx);
 
+        void HandleAddComponentClicked(QWidget* anchor);
+        void HandleRemoveComponentClicked(queen::TypeId typeId);
+        void HandleMultiAddComponentClicked(QWidget* anchor);
+        void HandleMultiRemoveComponentClicked(queen::TypeId typeId);
+
+        InspectorPanel* FindInspectorPanel();
+
+        QString MakeComponentGroupTitle(queen::TypeId typeId, const char* fallbackName);
+
         QVBoxLayout* m_rootLayout{};
+        queen::World* m_world{nullptr};
+        const queen::ComponentRegistry<256>* m_registry{nullptr};
+        EditorUndoManager* m_undo{nullptr};
+        InspectorPanel* m_inspectorPanel{nullptr};
+        queen::Entity m_singleEntity{};
+        wax::Vector<queen::Entity> m_multiEntities{};
     };
 } // namespace forge

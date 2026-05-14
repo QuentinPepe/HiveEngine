@@ -8,6 +8,7 @@
 #include <waggle/components/editor_only.h>
 #include <waggle/components/name.h>
 #include <waggle/components/sibling_index.h>
+#include <waggle/components/transform.h>
 #include <waggle/disabled_propagation.h>
 
 #include <forge/editor_undo.h>
@@ -968,7 +969,11 @@ namespace forge
             m_selection.Clear();
 
             menu.addAction("New Entity", [this]() {
-                const queen::Entity entity = m_currentWorld->Spawn().Build();
+                const queen::Entity entity = m_currentWorld->Spawn()
+                                                 .With(waggle::Transform{})
+                                                 .With(waggle::WorldMatrix{})
+                                                 .With(waggle::TransformVersion{})
+                                                 .Build();
                 char nameBuf[32];
                 snprintf(nameBuf, sizeof(nameBuf), "Entity %u", entity.Index());
                 m_currentWorld->Set(entity, waggle::Name{wax::FixedString{nameBuf}});

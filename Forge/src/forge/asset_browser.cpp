@@ -1749,14 +1749,21 @@ namespace forge
             std::filesystem::rename(oldHiveid, newHiveid, ec);
         }
 
+        emit assetRenamed(QString::fromStdString(fsPath.generic_string()),
+                          QString::fromStdString(newPath.generic_string()));
+
         m_undoManager->Push(
-            [newPath, fsPath] {
+            [this, newPath, fsPath] {
                 std::error_code ec;
                 std::filesystem::rename(newPath, fsPath, ec);
+                emit assetRenamed(QString::fromStdString(newPath.generic_string()),
+                                  QString::fromStdString(fsPath.generic_string()));
             },
-            [newPath, fsPath] {
+            [this, newPath, fsPath] {
                 std::error_code ec;
                 std::filesystem::rename(fsPath, newPath, ec);
+                emit assetRenamed(QString::fromStdString(fsPath.generic_string()),
+                                  QString::fromStdString(newPath.generic_string()));
             });
 
         if (m_currentDir.generic_string().find(fsPath.generic_string()) != std::string::npos)
@@ -1782,14 +1789,19 @@ namespace forge
             return;
         }
 
+        emit assetDeleted(QString::fromStdString(fsPath.generic_string()));
+
         m_undoManager->Push(
-            [fsPath, trashPath] {
+            [this, fsPath, trashPath] {
                 std::error_code ec;
                 std::filesystem::rename(trashPath, fsPath, ec);
+                emit assetRenamed(QString::fromStdString(trashPath.generic_string()),
+                                  QString::fromStdString(fsPath.generic_string()));
             },
-            [fsPath, trashPath] {
+            [this, fsPath, trashPath] {
                 std::error_code ec;
                 std::filesystem::rename(fsPath, trashPath, ec);
+                emit assetDeleted(QString::fromStdString(fsPath.generic_string()));
             });
 
         if (m_currentDir.generic_string().find(fsPath.generic_string()) != std::string::npos)
