@@ -10,10 +10,14 @@
 
 #include <waggle/components/camera.h>
 #include <waggle/components/disabled.h>
+#include <waggle/components/editor_grid.h>
 #include <waggle/components/editor_only.h>
+#include <waggle/components/gizmo.h>
 #include <waggle/components/lighting.h>
 #include <waggle/components/mesh_reference.h>
 #include <waggle/components/transform.h>
+#include <waggle/gizmo_state.h>
+#include <waggle/play_state.h>
 #include <waggle/project/project_context.h>
 #include <waggle/project/project_manager.h>
 #include <waggle/render/render_frame.h>
@@ -32,24 +36,15 @@ namespace waggle
             return hive::math::Float3{m.m_m[3][0], m.m_m[3][1], m.m_m[3][2]};
         }
 
-        bool ResolveActiveCamera(queen::World& world, hive::math::Mat4* outWorld, const Camera** outCamera)
+        bool ResolveActiveCamera(queen::World& world, PlayState playState, hive::math::Mat4* outWorld,
+                                 const Camera** outCamera)
         {
             const Camera* found = nullptr;
             hive::math::Mat4 foundWorld = hive::math::Mat4::Identity();
 
-            // Editor camera takes precedence: the user is navigating with it. Once a play
-            // mode toggle exists, this preference flips.
-            world.Query<queen::Read<WorldMatrix>, queen::Read<Camera>, queen::Read<EditorOnly>>().Each(
-                [&](const WorldMatrix& worldMatrix, const Camera& camera, const EditorOnly&) {
-                    if (found == nullptr)
-                    {
-                        found = &camera;
-                        foundWorld = worldMatrix.m_matrix;
-                    }
-                });
-            if (found == nullptr)
+            if (playState == PlayState::PLAYING)
             {
-                world.Query<queen::Read<WorldMatrix>, queen::Read<Camera>>().Each(
+                world.Query<queen::Read<WorldMatrix>, queen::Read<Camera>, queen::Without<EditorOnly>>().Each(
                     [&](const WorldMatrix& worldMatrix, const Camera& camera) {
                         if (found == nullptr)
                         {
@@ -58,6 +53,29 @@ namespace waggle
                         }
                     });
             }
+            else
+            {
+                world.Query<queen::Read<WorldMatrix>, queen::Read<Camera>, queen::Read<EditorOnly>>().Each(
+                    [&](const WorldMatrix& worldMatrix, const Camera& camera, const EditorOnly&) {
+                        if (found == nullptr)
+                        {
+                            found = &camera;
+                            foundWorld = worldMatrix.m_matrix;
+                        }
+                    });
+                if (found == nullptr)
+                {
+                    world.Query<queen::Read<WorldMatrix>, queen::Read<Camera>>().Each(
+                        [&](const WorldMatrix& worldMatrix, const Camera& camera) {
+                            if (found == nullptr)
+                            {
+                                found = &camera;
+                                foundWorld = worldMatrix.m_matrix;
+                            }
+                        });
+                }
+            }
+
             if (found == nullptr)
             {
                 return false;
@@ -84,9 +102,11 @@ namespace waggle
             return;
         }
 
+        const PlayState playState = GetPlayState(world);
+
         const Camera* activeCamera = nullptr;
         hive::math::Mat4 cameraWorld = hive::math::Mat4::Identity();
-        if (!ResolveActiveCamera(world, &cameraWorld, &activeCamera))
+        if (!ResolveActiveCamera(world, playState, &cameraWorld, &activeCamera))
         {
             return;
         }
@@ -96,6 +116,15 @@ namespace waggle
                                                       activeCamera->m_zFar);
         frame.m_view.m_eyeWorld = ExtractTranslation(cameraWorld);
         frame.m_hasCamera = true;
+
+        auto* viewMirror = world.Resource<EditorViewParams>();
+        if (viewMirror != nullptr)
+        {
+            viewMirror->m_view = frame.m_view.m_view;
+            viewMirror->m_proj = frame.m_view.m_proj;
+            viewMirror->m_eyeWorld = frame.m_view.m_eyeWorld;
+            viewMirror->m_valid = true;
+        }
 
         bool sunFound = false;
         world.Query<queen::Read<DirectionalLight>>().Each([&](const DirectionalLight& light) {
@@ -132,21 +161,67 @@ namespace waggle
 
         swarm::Material* defaultMaterial = renderModule.GetDefaultMaterial(projectMgr);
 
+        auto pushDraw = [&](const WorldMatrix& wm, const MeshReference& mr) {
+            swarm::Mesh* mesh = renderModule.AcquireMesh(mr.m_meshName.View(), vfs);
+            if (mesh == nullptr)
+                return;
+            swarm::Material* material = mr.m_material.IsEmpty()
+                                            ? defaultMaterial
+                                            : renderModule.AcquireMaterial(mr.m_material.View(), projectMgr);
+            if (material == nullptr)
+                material = defaultMaterial;
+            if (material == nullptr)
+                return;
+            frame.m_draws.PushBack(DrawItem{mesh, material, wm.m_matrix, mr.m_meshIndex});
+        };
+
         frame.m_draws.Reserve(world.EntityCount());
-        world.Query<queen::Read<WorldMatrix>, queen::Read<MeshReference>, queen::Without<HierarchyDisabled>>().Each(
-            [&](const WorldMatrix& wm, const MeshReference& mr) {
-                swarm::Mesh* mesh = renderModule.AcquireMesh(mr.m_meshName.View(), vfs);
-                if (mesh == nullptr)
-                    return;
-                swarm::Material* material = mr.m_material.IsEmpty()
-                                                ? defaultMaterial
-                                                : renderModule.AcquireMaterial(mr.m_material.View(), projectMgr);
-                if (material == nullptr)
-                    material = defaultMaterial;
-                if (material == nullptr)
-                    return;
-                frame.m_draws.PushBack(DrawItem{mesh, material, wm.m_matrix, mr.m_meshIndex});
-            });
+        if (playState == PlayState::PLAYING)
+        {
+            world.Query<queen::Read<WorldMatrix>, queen::Read<MeshReference>, queen::Without<HierarchyDisabled>,
+                        queen::Without<EditorOnly>>()
+                .Each([&](const WorldMatrix& wm, const MeshReference& mr) { pushDraw(wm, mr); });
+        }
+        else
+        {
+            world.Query<queen::Read<WorldMatrix>, queen::Read<MeshReference>, queen::Without<HierarchyDisabled>>().Each(
+                [&](const WorldMatrix& wm, const MeshReference& mr) { pushDraw(wm, mr); });
+
+            swarm::Mesh* gridMesh = renderModule.GetEditorGridMesh();
+            swarm::Material* gridMaterial = renderModule.GetEditorGridMaterial(projectMgr);
+            if (gridMesh != nullptr && gridMaterial != nullptr)
+            {
+                world.Query<queen::Read<WorldMatrix>, queen::Read<EditorGrid>>().Each(
+                    [&](const WorldMatrix& wm, const EditorGrid&) {
+                        frame.m_draws.PushBack(DrawItem{gridMesh, gridMaterial, wm.m_matrix, -1});
+                    });
+            }
+
+            swarm::Material* gizmoMaterial = renderModule.GetGizmoMaterial(projectMgr);
+            if (gizmoMaterial != nullptr)
+            {
+                world.Query<queen::Read<WorldMatrix>, queen::Read<GizmoPart>>().Each(
+                    [&](const WorldMatrix& wm, const GizmoPart& part) {
+                        const uint8_t axis = static_cast<uint8_t>(part.m_axis);
+                        const bool hot = part.m_hot;
+                        swarm::Mesh* mesh = nullptr;
+                        switch (part.m_kind)
+                        {
+                            case GizmoKind::TRANSLATE_AXIS:
+                                mesh = renderModule.GetGizmoTranslateAxisMesh(axis, hot);
+                                break;
+                            case GizmoKind::ROTATE_RING:
+                                mesh = renderModule.GetGizmoRotateRingMesh(axis, hot);
+                                break;
+                            case GizmoKind::SCALE_AXIS:
+                                mesh = renderModule.GetGizmoScaleAxisMesh(axis, hot);
+                                break;
+                        }
+                        if (mesh != nullptr)
+                            frame.m_draws.PushBack(DrawItem{mesh, gizmoMaterial, wm.m_matrix, -1});
+                    });
+            }
+        }
     }
 
     void ExecuteRenderFrame(RenderModule& renderModule, const RenderFrame& frame, const drone::JobSubmitter& submitter)
