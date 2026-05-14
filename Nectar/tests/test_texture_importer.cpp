@@ -269,15 +269,16 @@ namespace
         nectar::ImportContext ctx{alloc, db, MakeId(7)};
         nectar::HiveDocument settings{alloc};
         settings.SetValue("import", "generate_mipmaps", nectar::HiveValue::MakeBool(false));
+        settings.SetValue("import", "compression", nectar::HiveValue::MakeString(alloc, "none"));
 
         auto result = importer.Import(span, settings, ctx);
         larvae::AssertTrue(result.m_success);
 
         auto* header = reinterpret_cast<const nectar::NtexHeader*>(result.m_intermediateData.Data());
         larvae::AssertEqual(header->m_magic, nectar::kNtexMagic);
-        larvae::AssertEqual(header->m_version, uint32_t{1});
+        larvae::AssertEqual(header->m_version, nectar::kNtexVersion);
         larvae::AssertTrue(header->m_format == nectar::PixelFormat::RGBA8);
-        larvae::AssertTrue(header->m_srgb); // default
+        larvae::AssertTrue(header->m_srgb);
     });
 
     auto t8 = larvae::RegisterTest("NectarTexture", "Extensions", []() {
@@ -290,7 +291,7 @@ namespace
 
     auto t9 = larvae::RegisterTest("NectarTexture", "VersionAndTypeName", []() {
         nectar::TextureImporter importer;
-        larvae::AssertEqual(importer.Version(), uint32_t{2});
+        larvae::AssertEqual(importer.Version(), uint32_t{3});
         larvae::AssertTrue(importer.TypeName().Equals("Texture"));
     });
 
