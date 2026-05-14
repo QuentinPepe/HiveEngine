@@ -62,6 +62,11 @@ namespace forge
         void ProgressSetProgress(int current, int total);
         void HideProgress();
 
+        void ShowBootProgress(const QString& projectName);
+        void BootProgressSetStep(const QString& step);
+        void BootProgressSetProgress(int current, int total);
+        void HideBootProgress();
+
         EditorToolbar* Toolbar();
 
     protected:

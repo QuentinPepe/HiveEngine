@@ -864,4 +864,49 @@ namespace forge
         if (m_progressOverlay)
             m_progressOverlay->Hide();
     }
+
+    void ForgeMainWindow::ShowBootProgress(const QString& projectName)
+    {
+        if (m_hub != nullptr)
+        {
+            m_hub->hide();
+        }
+        if (m_loadingWidget != nullptr)
+        {
+            m_loadingWidget->hide();
+            m_loadingWidget = nullptr;
+        }
+        menuBar()->hide();
+        setWindowTitle(QString{"HiveEngine - %1"}.arg(projectName));
+
+        if (m_progressOverlay == nullptr)
+        {
+            m_progressOverlay = new ProgressOverlay{this};
+        }
+        m_progressOverlay->Show(QString{"Loading %1"}.arg(projectName));
+    }
+
+    void ForgeMainWindow::BootProgressSetStep(const QString& step)
+    {
+        if (m_progressOverlay != nullptr)
+        {
+            m_progressOverlay->SetStep(step);
+        }
+    }
+
+    void ForgeMainWindow::BootProgressSetProgress(int current, int total)
+    {
+        if (m_progressOverlay != nullptr)
+        {
+            m_progressOverlay->SetProgress(current, total);
+        }
+    }
+
+    void ForgeMainWindow::HideBootProgress()
+    {
+        if (m_progressOverlay != nullptr)
+        {
+            m_progressOverlay->Hide();
+        }
+    }
 } // namespace forge
