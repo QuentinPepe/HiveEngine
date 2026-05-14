@@ -7,9 +7,10 @@ namespace nectar
 {
     enum class PixelFormat : uint8_t
     {
-        RGBA8 = 0, // 4 bytes per pixel
-        RGB8 = 1,  // 3 bytes per pixel
-        GREY8 = 2, // 1 byte per pixel
+        RGBA8 = 0,
+        RGB8 = 1,
+        GREY8 = 2,
+        BC7 = 3,
     };
 
     struct TextureMipLevel
@@ -28,10 +29,12 @@ namespace nectar
 
     static constexpr uint32_t kNtexMagic = 0x5845544E; // "NTEX" in little-endian
 
+    static constexpr uint32_t kNtexVersion = 2;
+
     struct NtexHeader
     {
         uint32_t m_magic{kNtexMagic};
-        uint32_t m_version{1};
+        uint32_t m_version{kNtexVersion};
         uint32_t m_width{0};
         uint32_t m_height{0};
         uint32_t m_channels{0};
@@ -51,6 +54,8 @@ namespace nectar
                 return 3;
             case PixelFormat::GREY8:
                 return 1;
+            case PixelFormat::BC7:
+                return 0;
         }
         return 4;
     }
