@@ -11,21 +11,14 @@
 
 namespace queen
 {
-    /**
-     * A single name-value pair in an enum reflection
-     */
     struct EnumEntry
     {
         const char* m_name = nullptr;
         int64_t m_value = 0;
     };
 
-    /**
-     * Type-erased enum reflection data
-     *
-     * Provides runtime name↔value mapping for reflected enums.
-     * Stored as a pointer inside FieldInfo for FieldType::Enum fields.
-     */
+    // Type-erased name<->value mapping for reflected enums. Referenced from
+    // FieldInfo for FieldType::ENUM fields.
     struct EnumReflectionBase
     {
         const char* m_typeName = nullptr;
@@ -34,10 +27,7 @@ namespace queen
         const EnumEntry* m_entries = nullptr;
         size_t m_entryCount = 0;
 
-        /**
-         * Get the name for a given enum value
-         * @return Name string or nullptr if not found
-         */
+        // Returns nullptr if value is not registered.
         [[nodiscard]] const char* NameOf(int64_t value) const noexcept
         {
             for (size_t i = 0; i < m_entryCount; ++i)
@@ -50,10 +40,6 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Get the value for a given enum name
-         * @return true if found, false otherwise
-         */
         [[nodiscard]] bool ValueOf(const char* name, int64_t& out) const noexcept
         {
             if (name == nullptr)
@@ -76,37 +62,13 @@ namespace queen
         }
     };
 
-    /**
-     * Builder for enum reflection data
-     *
-     * Captures enum entries in a fixed-size array, then exposes them
-     * via Base() as an EnumReflectionBase.
-     *
-     * Example:
-     * @code
-     *   template<> struct queen::EnumInfo<RenderMode> {
-     *       static const EnumReflectionBase& Get() {
-     *           static auto r = []() {
-     *               EnumReflector<> e;
-     *               e.Value("Opaque", RenderMode::Opaque);
-     *               e.Value("Transparent", RenderMode::Transparent);
-     *               return e;
-     *           }();
-     *           return r.Base();
-     *       }
-     *   };
-     * @endcode
-     *
-     * @tparam MaxEntries Maximum number of enum entries to support
-     */
+    // Fixed-size builder for enum reflection. Use inside an EnumInfo<E>::Get()
+    // specialization to register name<->value pairs.
     template <size_t MaxEntries = 32> class EnumReflector
     {
     public:
         constexpr EnumReflector() noexcept = default;
 
-        /**
-         * Register an enum value with its name
-         */
         template <typename E> void Value(const char* name, E value) noexcept
         {
             static_assert(std::is_enum_v<E>, "Value() requires an enum type");
@@ -124,9 +86,6 @@ namespace queen
             m_base.m_underlyingSize = sizeof(std::underlying_type_t<E>);
         }
 
-        /**
-         * Get the type-erased reflection data
-         */
         [[nodiscard]] const EnumReflectionBase& Base() const noexcept
         {
             return m_base;
@@ -143,39 +102,10 @@ namespace queen
         EnumReflectionBase m_base{};
     };
 
-    /**
-     * Extension point for enum reflection (template specialization)
-     *
-     * Users specialize this template for their enum types.
-     * When C++26 reflection lands, the primary template will
-     * auto-generate reflection from std::meta::enumerators_of(^E),
-     * making specializations optional.
-     *
-     * Example:
-     * @code
-     *   enum class MyEnum : uint8_t { A, B, C };
-     *
-     *   template<> struct queen::EnumInfo<MyEnum> {
-     *       static const EnumReflectionBase& Get() {
-     *           static auto r = []() {
-     *               EnumReflector<> e;
-     *               e.Value("A", MyEnum::A);
-     *               e.Value("B", MyEnum::B);
-     *               e.Value("C", MyEnum::C);
-     *               return e;
-     *           }();
-     *           return r.Base();
-     *       }
-     *   };
-     * @endcode
-     */
+    // Extension point: specialize EnumInfo<E> with a static Get() returning
+    // an EnumReflectionBase. Will be obsoleted by C++26 reflection.
     template <typename E> struct EnumInfo; // No default definition — must be specialized
 
-    /**
-     * Concept for reflectable enums
-     *
-     * An enum is ReflectableEnum if EnumInfo<E> is specialized with a Get() method.
-     */
     template <typename E>
     concept ReflectableEnum = std::is_enum_v<E> && requires {
         { EnumInfo<E>::Get() } -> std::convertible_to<const EnumReflectionBase&>;

@@ -6,73 +6,11 @@
 
 namespace queen
 {
-    /**
-     * Observer trigger event types for structural ECS changes
-     *
-     * These tag types are used to register observers that react to
-     * component lifecycle events. Observers are invoked synchronously
-     * when the corresponding structural change occurs.
-     *
-     * Three trigger types are supported:
-     * - OnAdd<T>: Component T added to an entity
-     * - OnRemove<T>: Component T removed from an entity
-     * - OnSet<T>: Component T value modified
-     *
-     * Use cases:
-     * - Logging component additions/removals for debugging
-     * - Validating component data on modification
-     * - Maintaining derived state when components change
-     * - Triggering side effects (audio, VFX) on game events
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ OnAdd<T>/OnRemove<T>/OnSet<T> are empty tag types              │
-     * │ They carry component type T at compile-time only               │
-     * │ No runtime storage cost                                        │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Type extraction: Compile-time (zero runtime cost)
-     * - Observer matching: O(1) hash lookup by trigger+component TypeId
-     *
-     * Limitations:
-     * - Only one component type per observer registration
-     * - Cannot observe multiple triggers in single observer
-     * - OnSet requires explicit change tracking (not automatic)
-     *
-     * Example:
-     * @code
-     *   // Observer triggered when Health component is added
-     *   world.Observer<OnAdd<Health>>("LogSpawn")
-     *       .Each([](Entity e, const Health& hp) {
-     *           Log("Entity {} spawned with {} HP", e, hp.value);
-     *       });
-     *
-     *   // Observer triggered when Health is removed
-     *   world.Observer<OnRemove<Health>>("LogDeath")
-     *       .Each([](Entity e) {
-     *           Log("Entity {} died", e);
-     *       });
-     *
-     *   // Observer triggered when Position is modified
-     *   world.Observer<OnSet<Position>>("TrackMovement")
-     *       .Each([](Entity e, const Position& pos) {
-     *           UpdateSpatialIndex(e, pos);
-     *       });
-     * @endcode
-     */
+    // Compile-time tag identifying an observer trigger event. The trio OnAdd/OnRemove/OnSet
+    // is empty (zero runtime cost) and only carries the component type plus pre-computed
+    // TypeIds used by ObserverStorage for O(1) hash lookup.
 
-    /**
-     * Trigger type for component addition
-     *
-     * Fired when a component of type T is added to an entity.
-     * This includes:
-     * - Spawn with component: world.Spawn().Add<T>()
-     * - Add to existing entity: world.Commands().Get().Add<T>(entity)
-     * - Archetype change that adds component
-     *
-     * @tparam T The component type being observed
-     */
+    // Fires after component T is added and initialised on an entity.
     template <typename T> struct OnAdd
     {
         using ComponentType = T;
@@ -80,17 +18,7 @@ namespace queen
         static constexpr TypeId componentId = TypeIdOf<T>();
     };
 
-    /**
-     * Trigger type for component removal
-     *
-     * Fired when a component of type T is removed from an entity.
-     * This includes:
-     * - Despawn: world.Commands().Get().Despawn(entity)
-     * - Remove component: world.Commands().Get().Remove<T>(entity)
-     * - Archetype change that removes component
-     *
-     * @tparam T The component type being observed
-     */
+    // Fires before component T is destroyed on an entity (also during full despawn).
     template <typename T> struct OnRemove
     {
         using ComponentType = T;
@@ -98,16 +26,8 @@ namespace queen
         static constexpr TypeId componentId = TypeIdOf<T>();
     };
 
-    /**
-     * Trigger type for component value modification
-     *
-     * Fired when a component of type T has its value changed.
-     * This requires explicit notification:
-     * - Using Mut<T> in queries (marks as modified)
-     * - Using Set<T>(entity, value) commands
-     *
-     * @tparam T The component type being observed
-     */
+    // Fires when T is mutated through Mut<T> or replaced via Commands::Set. Requires explicit
+    // change notification: raw pointer writes won't trigger this observer.
     template <typename T> struct OnSet
     {
         using ComponentType = T;
@@ -144,37 +64,20 @@ namespace queen
         };
     } // namespace detail
 
-    /**
-     * Concept for OnAdd trigger types
-     */
     template <typename T>
     concept IsOnAddTrigger = detail::IsOnAdd<T>::value;
 
-    /**
-     * Concept for OnRemove trigger types
-     */
     template <typename T>
     concept IsOnRemoveTrigger = detail::IsOnRemove<T>::value;
 
-    /**
-     * Concept for OnSet trigger types
-     */
     template <typename T>
     concept IsOnSetTrigger = detail::IsOnSet<T>::value;
 
-    /**
-     * Concept for any valid observer trigger type
-     */
     template <typename T>
     concept ObserverTrigger = IsOnAddTrigger<T> || IsOnRemoveTrigger<T> || IsOnSetTrigger<T>;
 
-    // Trigger type enumeration (for runtime identification)
-
-    /**
-     * Runtime identifier for trigger types
-     *
-     * Used in ObserverStorage for fast lookup without template overhead.
-     */
+    // Type-erased runtime trigger; mirrors the OnAdd/OnRemove/OnSet template family so
+    // ObserverStorage can dispatch without instantiating per-type code paths.
     enum class TriggerType : uint8_t
     {
         ADD,
@@ -182,9 +85,6 @@ namespace queen
         SET
     };
 
-    /**
-     * Get runtime trigger type from compile-time trigger
-     */
     template <ObserverTrigger T> [[nodiscard]] constexpr TriggerType GetTriggerType() noexcept
     {
         if constexpr (IsOnAddTrigger<T>)
@@ -201,28 +101,12 @@ namespace queen
         }
     }
 
-    /**
-     * Extract component TypeId from a trigger type
-     */
     template <ObserverTrigger T> [[nodiscard]] constexpr TypeId GetTriggerComponentId() noexcept
     {
         return T::componentId;
     }
 
-    // Observer key for storage lookup
-
-    /**
-     * Composite key for observer lookup
-     *
-     * Combines trigger type and component type for fast hash lookup.
-     * Used by ObserverStorage to find observers matching a structural change.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ trigger: TriggerType (1 byte) + padding (7 bytes)             │
-     * │ component_id: TypeId (8 bytes)                                │
-     * └────────────────────────────────────────────────────────────────┘
-     */
+    // Composite (trigger, component) key used by ObserverStorage's lookup HashMap.
     struct ObserverKey
     {
         TriggerType m_trigger;
@@ -233,28 +117,19 @@ namespace queen
             return m_trigger == other.m_trigger && m_componentId == other.m_componentId;
         }
 
-        /**
-         * Create key from compile-time trigger type
-         */
         template <ObserverTrigger T> [[nodiscard]] static constexpr ObserverKey Of() noexcept
         {
             return ObserverKey{GetTriggerType<T>(), GetTriggerComponentId<T>()};
         }
 
-        /**
-         * Create key from runtime values
-         */
         [[nodiscard]] static constexpr ObserverKey From(TriggerType trigger, TypeId componentId) noexcept
         {
             return ObserverKey{trigger, componentId};
         }
     };
 
-    /**
-     * Hash function for ObserverKey
-     *
-     * Used by HashMap for observer storage lookup.
-     */
+    // FNV-1a-style hash; the multiplication after the XOR is what diffuses the trigger byte
+    // across the TypeId bits so similar keys don't collide on a single bucket.
     struct ObserverKeyHash
     {
         [[nodiscard]] constexpr uint64_t operator()(const ObserverKey& key) const noexcept

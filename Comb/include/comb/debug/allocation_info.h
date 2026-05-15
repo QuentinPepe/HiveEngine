@@ -1,27 +1,12 @@
-/**
- * Allocation Metadata
- *
- * Stores information about each allocation for debugging purposes.
- * Only compiled when COMB_MEM_DEBUG=1 (zero overhead otherwise).
- *
- * Memory layout with guards:
- * ┌──────────────┬─────────────────────┬──────────────┐
- * │ GUARD_FRONT  │   User Data (size)  │  GUARD_BACK  │
- * │  (4 bytes)   │                     │   (4 bytes)  │
- * │ 0xDEADBEEF   │                     │  0xDEADBEEF  │
- * └──────────────┴─────────────────────┴──────────────┘
- *
- * Example:
- * @code
- *   #if COMB_MEM_DEBUG
- *       comb::debug::AllocationInfo info{};
- *       info.address = ptr;
- *       info.size = 64;
- *       info.tag = "Player Entity";
- *       registry.RegisterAllocation(info);
- *   #endif
- * @endcode
- */
+// Per-allocation metadata used by the debug registry. Only compiled when
+// COMB_MEM_DEBUG=1.
+//
+// Memory layout with guards:
+// ┌──────────────┬─────────────────────┬──────────────┐
+// │ GUARD_FRONT  │   User Data (size)  │  GUARD_BACK  │
+// │  (4 bytes)   │                     │   (4 bytes)  │
+// │ 0xDEADBEEF   │                     │  0xDEADBEEF  │
+// └──────────────┴─────────────────────┴──────────────┘
 
 #pragma once
 
@@ -35,10 +20,6 @@
 namespace comb::debug
 {
 
-    /**
-     * Stores information about a single allocation for debugging.
-     * Size: ~48 bytes without callstacks, ~176 bytes with callstacks
-     */
     struct AllocationInfo
     {
         // Core Information (Always Present)
@@ -47,20 +28,10 @@ namespace comb::debug
         size_t m_size{0};
         size_t m_alignment{0};
 
-        /**
-         * Allocation timestamp (nanoseconds, monotonic)
-         * Cross-platform: Use comb::debug::GetTimestamp()
-         * Useful for tracking allocation order and lifetime
-         */
+        // Monotonic ns timestamp from GetTimestamp(); orders allocations.
         uint64_t m_timestamp{0};
 
-        /**
-         * Optional allocation tag (user-provided string literal)
-         * Example: "Player Entity", "Temp Parse Buffer"
-         * Can be nullptr if no tag provided
-         *
-         * NOTE: Assumed to be string literal (no ownership)
-         */
+        // Assumed to be a string literal; not owned.
         const char* m_tag{nullptr};
 
         uint32_t m_allocationId{0};
@@ -69,85 +40,49 @@ namespace comb::debug
         // Optional: Callstack (Platform-Specific)
 
 #if COMB_MEM_DEBUG_CALLSTACKS
-        /**
-         * Callstack frames captured at allocation site
-         * Platform-specific pointers (return addresses)
-         * Size: 16 pointers * 8 bytes = 128 bytes
-         */
         void* callstack[maxCallstackDepth]{};
-
-        /**
-         * Actual number of frames captured (0-16)
-         */
         uint32_t callstackDepth{0};
 #endif
 
-        // Methods
-
-        /**
-         * Check if this allocation info is valid
-         */
         [[nodiscard]] constexpr bool IsValid() const noexcept
         {
             return m_address != nullptr && m_size > 0;
         }
 
-        /**
-         * Get raw pointer (before guard bytes)
-         * This is the actual pointer allocated from the underlying allocator
-         */
+        // Raw allocator pointer (before the front guard).
         [[nodiscard]] void* GetRawPointer() const noexcept
         {
             return static_cast<std::byte*>(m_address) - guardSize;
         }
 
-        /**
-         * Get total allocated size (including guard bytes)
-         */
+        // Includes guard bytes.
         [[nodiscard]] constexpr size_t GetTotalSize() const noexcept
         {
             return m_size + totalGuardSize;
         }
 
-        /**
-         * Read front guard value (memcpy-safe for potentially misaligned addresses)
-         */
+        // memcpy-based so misaligned guard addresses are safe.
         [[nodiscard]] uint32_t ReadGuardFront() const noexcept
         {
             return ReadGuard(static_cast<std::byte*>(m_address) - guardSize);
         }
 
-        /**
-         * Read back guard value (memcpy-safe for potentially misaligned addresses)
-         */
         [[nodiscard]] uint32_t ReadGuardBack() const noexcept
         {
             return ReadGuard(static_cast<std::byte*>(m_address) + m_size);
         }
 
-        /**
-         * Check if guard bytes are intact
-         * Returns true if both guards match GuardMagic (0xDEADBEEF)
-         */
         [[nodiscard]] bool CheckGuards() const noexcept
         {
             return ReadGuardFront() == guardMagic && ReadGuardBack() == guardMagic;
         }
 
-        /**
-         * Get tag or default string
-         */
         [[nodiscard]] const char* GetTagOrDefault(const char* defaultTag = "<no tag>") const noexcept
         {
             return m_tag ? m_tag : defaultTag;
         }
     };
 
-    /**
-     * Allocation statistics
-     *
-     * Aggregated statistics for an allocator or global tracker
-     */
     struct AllocationStats
     {
         size_t m_totalAllocations{0};   // Total number of Allocate() calls
@@ -160,17 +95,11 @@ namespace comb::debug
 
         size_t m_overheadBytes{0}; // Debug overhead (guards, metadata)
 
-        /**
-         * Calculate memory leak count
-         */
         [[nodiscard]] constexpr size_t GetLeakCount() const noexcept
         {
             return m_totalAllocations - m_totalDeallocations;
         }
 
-        /**
-         * Calculate overhead percentage
-         */
         [[nodiscard]] constexpr float GetOverheadPercentage() const noexcept
         {
             if (m_currentBytesUsed == 0)
@@ -179,10 +108,8 @@ namespace comb::debug
                    100.0f;
         }
 
-        /**
-         * Calculate fragmentation ratio (0.0 = no fragmentation, 1.0 = high)
-         * This is a simplified metric based on allocation/deallocation patterns
-         */
+        // Heuristic in [0,1]; not a real fragmentation measure, just the
+        // dealloc/alloc ratio used as a rough liveness indicator.
         [[nodiscard]] constexpr float GetFragmentationRatio() const noexcept
         {
             if (m_totalAllocations == 0)

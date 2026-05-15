@@ -23,11 +23,17 @@ namespace nectar
         wax::StringView ExtensionForMimeType(wax::StringView mimeType) noexcept
         {
             if (mimeType.Find(wax::StringView{"jpeg"}) != wax::StringView::npos)
+            {
                 return wax::StringView{".jpg"};
+            }
             if (mimeType.Find(wax::StringView{"jpg"}) != wax::StringView::npos)
+            {
                 return wax::StringView{".jpg"};
+            }
             if (mimeType.Find(wax::StringView{"ktx"}) != wax::StringView::npos)
+            {
                 return wax::StringView{".ktx2"};
+            }
             return wax::StringView{".png"};
         }
 
@@ -59,11 +65,15 @@ namespace nectar
         {
             const wax::StringView prefix{"data:"};
             if (uri.Size() < prefix.Size())
+            {
                 return false;
+            }
             for (size_t i = 0; i < prefix.Size(); ++i)
             {
                 if (uri.Data()[i] != prefix.Data()[i])
+                {
                     return false;
+                }
             }
 
             size_t comma = wax::StringView::npos;
@@ -76,7 +86,9 @@ namespace nectar
                 }
             }
             if (comma == wax::StringView::npos)
+            {
                 return false;
+            }
 
             outMime = wax::StringView{uri.Data() + prefix.Size(), comma - prefix.Size()};
             outBase64Payload = wax::StringView{uri.Data() + comma + 1, uri.Size() - comma - 1};
@@ -86,15 +98,25 @@ namespace nectar
         int Base64CharValue(char c) noexcept
         {
             if (c >= 'A' && c <= 'Z')
+            {
                 return c - 'A';
+            }
             if (c >= 'a' && c <= 'z')
+            {
                 return c - 'a' + 26;
+            }
             if (c >= '0' && c <= '9')
+            {
                 return c - '0' + 52;
+            }
             if (c == '+' || c == '-')
+            {
                 return 62;
+            }
             if (c == '/' || c == '_')
+            {
                 return 63;
+            }
             return -1;
         }
 
@@ -108,10 +130,14 @@ namespace nectar
             {
                 char c = in.Data()[i];
                 if (c == '=' || c == '\n' || c == '\r' || c == ' ' || c == '\t')
+                {
                     continue;
+                }
                 int v = Base64CharValue(c);
                 if (v < 0)
+                {
                     return false;
+                }
                 acc = (acc << 6) | v;
                 bits += 6;
                 if (bits >= 8)
@@ -155,7 +181,9 @@ namespace nectar
         cgltf_options options{};
         cgltf_data* data = nullptr;
         if (cgltf_parse(&options, gltfData.Data(), gltfData.Size(), &data) != cgltf_result_success)
+        {
             return result;
+        }
 
         if (cgltf_load_buffers(&options, data, nullptr) != cgltf_result_success)
         {
@@ -174,17 +202,17 @@ namespace nectar
             size_t byteSize = 0;
             wax::Vector<uint8_t> decoded{alloc};
 
-            if (image.buffer_view)
+            if (image.buffer_view != nullptr)
             {
                 const auto* bv = image.buffer_view;
                 const auto* buffer = bv->buffer;
-                if (buffer && buffer->data)
+                if (buffer != nullptr && buffer->data != nullptr)
                 {
                     bytes = static_cast<const uint8_t*>(buffer->data) + bv->offset;
                     byteSize = bv->size;
                 }
             }
-            else if (image.uri)
+            else if (image.uri != nullptr)
             {
                 wax::StringView uriView{image.uri};
                 wax::StringView mimeFromUri{};
@@ -195,7 +223,7 @@ namespace nectar
                     {
                         bytes = decoded.Data();
                         byteSize = decoded.Size();
-                        if (!image.mime_type)
+                        if (image.mime_type == nullptr)
                         {
                             // Mime came from URI prefix.
                             // Honoured indirectly: ExtensionForMimeType called below uses mimeView.
@@ -229,7 +257,7 @@ namespace nectar
 #else
             f = fopen(fullPath.CStr(), "wb");
 #endif
-            if (f)
+            if (f != nullptr)
             {
                 std::fwrite(bytes, 1, byteSize, f);
                 std::fclose(f);
@@ -262,13 +290,17 @@ namespace nectar
 
             GltfMaterialInfo info{};
             info.m_materialIndex = static_cast<int32_t>(i);
-            if (mat.name)
+            if (mat.name != nullptr)
+            {
                 info.m_name = wax::String{mat.name};
+            }
 
             auto resolveTextureName = [&](const cgltf_image* image) -> wax::String {
-                if (!image)
+                if (image == nullptr)
+                {
                     return wax::String{};
-                if (image->uri)
+                }
+                if (image->uri != nullptr)
                 {
                     wax::StringView uriView{image->uri};
                     if (uriView.Size() >= 5 && std::memcmp(uriView.Data(), "data:", 5) == 0)
@@ -278,7 +310,7 @@ namespace nectar
                     }
                     return wax::String{image->uri};
                 }
-                if (image->buffer_view)
+                if (image->buffer_view != nullptr)
                 {
                     const size_t idx = static_cast<size_t>(image - data->images);
                     return TextureNameForImage(*image, idx, alloc);
@@ -290,20 +322,26 @@ namespace nectar
             {
                 std::memcpy(info.m_baseColorFactor, mat.pbr_metallic_roughness.base_color_factor, 4 * sizeof(float));
 
-                if (mat.pbr_metallic_roughness.base_color_texture.texture)
+                if (mat.pbr_metallic_roughness.base_color_texture.texture != nullptr)
+                {
                     info.m_baseColorTexture =
                         resolveTextureName(mat.pbr_metallic_roughness.base_color_texture.texture->image);
+                }
 
-                if (mat.pbr_metallic_roughness.metallic_roughness_texture.texture)
+                if (mat.pbr_metallic_roughness.metallic_roughness_texture.texture != nullptr)
+                {
                     info.m_metallicRoughnessTexture =
                         resolveTextureName(mat.pbr_metallic_roughness.metallic_roughness_texture.texture->image);
+                }
 
                 info.m_metallicFactor = mat.pbr_metallic_roughness.metallic_factor;
                 info.m_roughnessFactor = mat.pbr_metallic_roughness.roughness_factor;
             }
 
-            if (mat.normal_texture.texture)
+            if (mat.normal_texture.texture != nullptr)
+            {
                 info.m_normalTexture = resolveTextureName(mat.normal_texture.texture->image);
+            }
 
             if (mat.alpha_mode == cgltf_alpha_mode_mask)
             {

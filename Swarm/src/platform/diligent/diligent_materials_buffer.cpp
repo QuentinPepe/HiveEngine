@@ -27,7 +27,7 @@ namespace swarm
         bd.ElementByteStride = sizeof(MaterialParamsGpu);
 
         device->CreateBuffer(bd, nullptr, &m_buffer);
-        if (!m_buffer)
+        if (m_buffer == nullptr)
         {
             hive::LogError(LOG_SWARM, "MaterialsBuffer: failed to create global buffer");
             return false;

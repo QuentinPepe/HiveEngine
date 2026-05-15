@@ -35,8 +35,10 @@ namespace nectar
 #else
         f = fopen(filePath.CStr(), "wb");
 #endif
-        if (!f)
+        if (f == nullptr)
+        {
             return false;
+        }
 
         uint32_t magic = kMagic;
         uint16_t version = kVersion;
@@ -71,8 +73,10 @@ namespace nectar
 #else
         f = fopen(filePath.CStr(), "rb");
 #endif
-        if (!f)
+        if (f == nullptr)
+        {
             return false;
+        }
 
         uint32_t magic = 0;
         uint16_t version = 0;

@@ -11,9 +11,6 @@
 
 namespace queen
 {
-    /**
-     * Result of a world deserialization operation
-     */
     struct WorldDeserializeResult
     {
         bool m_success = false;
@@ -23,20 +20,10 @@ namespace queen
         const char* m_error = nullptr;
     };
 
-    /**
-     * Deserializes a World from JSON using reflection and a ComponentRegistry
-     *
-     * - Additive loading: existing entities are preserved
-     * - Entity remapping: serialized IDs are mapped to newly spawned live entities
-     * - Entity references in components are remapped automatically
-     * - Hierarchy (Parent) is reconstructed via World::SetParent
-     * - Unknown component types are skipped (forward-compatible)
-     *
-     * Limitations:
-     * - Maximum 4096 entities per load
-     * - Maximum component size: 512 bytes
-     * - No Unicode escape sequences
-     */
+    // Additive JSON load: existing entities preserved, serialized IDs remapped
+    // to freshly spawned entities, Entity-typed fields remapped recursively,
+    // hierarchy rebuilt via SetParent, unknown component types skipped to
+    // stay forward-compatible.
     class WorldDeserializer
     {
         // --- Private types (declared first so Deserialize can use them) ---

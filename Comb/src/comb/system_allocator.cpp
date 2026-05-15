@@ -32,7 +32,9 @@ namespace comb
     void* SystemAllocator::Allocate(size_t size, size_t alignment, const char* /*tag*/)
     {
         if (size == 0)
+        {
             return nullptr;
+        }
 
         hive::Assert(IsPowerOfTwo(alignment), "SystemAllocator: alignment must be power of two");
 
@@ -44,8 +46,10 @@ namespace comb
         const size_t totalSize = AlignUp(userOffset + size, pageSize);
 
         void* base = AllocatePages(totalSize);
-        if (!base)
+        if (base == nullptr)
+        {
             return nullptr;
+        }
 
         auto* userPtr = static_cast<std::uint8_t*>(base) + userOffset;
         auto* header = reinterpret_cast<AllocHeader*>(userPtr - kHeaderSize);
@@ -59,8 +63,10 @@ namespace comb
 
     void SystemAllocator::Deallocate(void* ptr)
     {
-        if (!ptr)
+        if (ptr == nullptr)
+        {
             return;
+        }
 
         auto* header = reinterpret_cast<AllocHeader*>(static_cast<std::uint8_t*>(ptr) - kHeaderSize);
         void* base = header->m_base;

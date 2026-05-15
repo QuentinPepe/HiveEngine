@@ -209,7 +209,9 @@ namespace waggle
     bool GameplayModule::Register(queen::World& world)
     {
         if (m_registerFn == nullptr)
+        {
             return false;
+        }
 
         m_registerFn(world);
         world.InvalidateScheduler();
@@ -220,10 +222,14 @@ namespace waggle
     void GameplayModule::Unregister(queen::World& world)
     {
         if (!m_registered)
+        {
             return;
+        }
 
         if (m_unregisterFn != nullptr)
+        {
             m_unregisterFn(world);
+        }
 
         m_registered = false;
     }
@@ -234,7 +240,9 @@ namespace waggle
         Unload();
 
         if (!Load(dllPath))
+        {
             return false;
+        }
 
         return Register(world);
     }

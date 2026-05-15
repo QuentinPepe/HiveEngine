@@ -12,12 +12,8 @@
 
 namespace queen
 {
-    /**
-     * Extended component metadata with reflection and serialization
-     *
-     * Combines ComponentMeta (lifecycle functions) with ComponentReflection
-     * (field layout) for complete component handling.
-     */
+    // Bundles ComponentMeta (lifecycle) and ComponentReflection (field layout)
+    // plus a snapshot of T{} used to diff prefab overrides against defaults.
     struct RegisteredComponent
     {
         ComponentMeta m_meta;
@@ -40,62 +36,14 @@ namespace queen
         }
     };
 
-    /**
-     * Runtime component type registry
-     *
-     * Stores metadata for registered component types, enabling:
-     * - Type lookup by TypeId at runtime
-     * - Component serialization/deserialization
-     * - Editor/inspector integration
-     *
-     * Components must be explicitly registered before use.
-     * Registration captures both lifecycle functions and reflection data.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ entries_: RegisteredComponent[MaxComponents]                   │
-     * │ count_: size_t                                                 │
-     * │ type_id_to_index_: TypeId[MaxComponents] (sorted for bsearch)  │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Register: O(n) - maintains sorted order for binary search
-     * - Lookup by TypeId: O(log n) - binary search
-     * - Lookup by index: O(1) - array access
-     *
-     * Limitations:
-     * - Fixed maximum component count (template parameter)
-     * - Not thread-safe (register at startup only)
-     * - TypeIds must be unique (hash collisions will assert)
-     *
-     * Example:
-     * @code
-     *   ComponentRegistry<128> registry;
-     *
-     *   // Register components at startup
-     *   registry.Register<Position>();
-     *   registry.Register<Velocity>();
-     *
-     *   // Lookup at runtime
-     *   TypeId posId = TypeIdOf<Position>();
-     *   const RegisteredComponent* info = registry.Find(posId);
-     *   if (info && info->HasReflection()) {
-     *       // Serialize component using reflection
-     *   }
-     * @endcode
-     *
-     * @tparam MaxComponents Maximum number of component types to support
-     */
+    // Runtime registry of component types. Entries stay sorted by TypeId so
+    // Find() can binary-search. Not thread-safe: register at startup only.
+    // TypeId collisions assert.
     template <size_t MaxComponents = 256> class ComponentRegistry
     {
     public:
         constexpr ComponentRegistry() noexcept = default;
 
-        /**
-         * Register a reflectable component type
-         *
-         * @tparam T Component type (must satisfy Reflectable concept)
-         */
         template <Reflectable T> void Register() noexcept
         {
             hive::Assert(m_count < MaxComponents, "ComponentRegistry full");
@@ -133,14 +81,7 @@ namespace queen
             ++m_count;
         }
 
-        /**
-         * Register a non-reflectable component type (metadata only)
-         *
-         * For components that don't need serialization (e.g., tag components,
-         * runtime-only components).
-         *
-         * @tparam T Component type
-         */
+        // For tag/runtime-only components that don't need serialization.
         template <typename T> void RegisterWithoutReflection() noexcept
         {
             hive::Assert(m_count < MaxComponents, "ComponentRegistry full");
@@ -177,11 +118,7 @@ namespace queen
             ++m_count;
         }
 
-        /**
-         * Find component by TypeId (binary search)
-         *
-         * @return Pointer to RegisteredComponent or nullptr if not found
-         */
+        // Binary search; returns nullptr if not found.
         [[nodiscard]] const RegisteredComponent* Find(TypeId typeId) const noexcept
         {
             if (m_count == 0)
@@ -213,11 +150,7 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Find component by name (linear search)
-         *
-         * @return Pointer to RegisteredComponent or nullptr if not found
-         */
+        // Linear search; returns nullptr if not found.
         [[nodiscard]] const RegisteredComponent* FindByName(const char* name) const noexcept
         {
             if (name == nullptr)
@@ -234,42 +167,27 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Get component by index
-         */
         [[nodiscard]] const RegisteredComponent& operator[](size_t index) const noexcept
         {
             hive::Assert(index < m_count, "Index out of bounds");
             return m_entries[index];
         }
 
-        /**
-         * Get number of registered components
-         */
         [[nodiscard]] size_t Count() const noexcept
         {
             return m_count;
         }
 
-        /**
-         * Check if a component type is registered
-         */
         [[nodiscard]] bool Contains(TypeId typeId) const noexcept
         {
             return Find(typeId) != nullptr;
         }
 
-        /**
-         * Check if a component type is registered
-         */
         template <typename T> [[nodiscard]] bool Contains() const noexcept
         {
             return Contains(TypeIdOf<T>());
         }
 
-        /**
-         * Iterate over all registered components
-         */
         [[nodiscard]] const RegisteredComponent* Begin() const noexcept
         {
             return m_entries;
@@ -280,13 +198,8 @@ namespace queen
             return m_entries + m_count;
         }
 
-        /**
-         * Default-construct a component into pre-allocated memory
-         *
-         * @param type_id TypeId of the component to construct
-         * @param dst Pre-allocated memory (must be at least meta.size bytes, properly aligned)
-         * @return true if constructed, false if type not found
-         */
+        // dst must be at least meta.size bytes, properly aligned. Returns
+        // false if type is not registered.
         [[nodiscard]] bool Construct(TypeId typeId, void* dst) const noexcept
         {
             const RegisteredComponent* comp = Find(typeId);
@@ -296,14 +209,6 @@ namespace queen
             return true;
         }
 
-        /**
-         * Clone a component from src to dst
-         *
-         * @param type_id TypeId of the component
-         * @param dst Destination memory (must be properly allocated)
-         * @param src Source component
-         * @return true if cloned, false if type not found
-         */
         [[nodiscard]] bool Clone(TypeId typeId, void* dst, const void* src) const noexcept
         {
             const RegisteredComponent* comp = Find(typeId);
@@ -313,16 +218,8 @@ namespace queen
             return true;
         }
 
-        /**
-         * Compare a component instance with its registered default value
-         *
-         * Returns a bitmask where bit N is set if field N differs from the default.
-         * Supports up to 64 fields. Returns ~0 if no default is available.
-         *
-         * @param type_id TypeId of the component
-         * @param instance Pointer to the component instance
-         * @return Bitmask of changed fields (0 = all match default)
-         */
+        // Bitmask of fields differing from the default. Caps at 64 fields.
+        // Returns ~0 when no default snapshot is available.
         [[nodiscard]] uint64_t DiffWithDefault(TypeId typeId, const void* instance) const noexcept
         {
             const RegisteredComponent* comp = Find(typeId);
@@ -347,11 +244,6 @@ namespace queen
             return mask;
         }
 
-        /**
-         * Get the default value snapshot for a component type
-         *
-         * @return Pointer to default-constructed instance, or nullptr
-         */
         [[nodiscard]] const void* GetDefault(TypeId typeId) const noexcept
         {
             const RegisteredComponent* comp = Find(typeId);
@@ -360,9 +252,6 @@ namespace queen
             return comp->m_defaultValue;
         }
 
-        /**
-         * Clear all registered components
-         */
         void Clear() noexcept
         {
             m_count = 0;

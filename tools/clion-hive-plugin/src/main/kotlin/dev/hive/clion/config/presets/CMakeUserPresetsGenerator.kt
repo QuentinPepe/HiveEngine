@@ -61,31 +61,40 @@ object CMakeUserPresetsGenerator {
         val inheritedBase = resolveBasePreset(toolchain, availableBasePresets)
         return UserPresetsDocument(
             version = CONFIGURE_PRESET_VERSION,
-            configurePresets = catalog.engineModes.map { mode ->
+            configurePresets = catalog.engineModes.flatMap { mode ->
                 val config = uiState.modes.getValue(mode)
-                UserConfigurePreset(
-                    name = presetNameFor(mode),
-                    inherits = inheritedBase,
-                    displayName = "HiveEngine $mode",
-                    description = catalog.presetDefaults[mode]?.description,
-                    binaryDir = "\${sourceDir}/out/build/\${presetName}",
-                    cacheVariables = linkedMapOf<String, String>().apply {
-                        put("CMAKE_BUILD_TYPE", config.buildConfig)
-                        put("HIVE_ENGINE_MODE", mode)
-                        REQUIRED_FEATURE_IDS.forEach { featureId ->
-                            val feature = featuresById[featureId] ?: return@forEach
-                            feature.cmakeVar?.let { cmakeVar ->
-                                put(cmakeVar, toCMakeValue(feature, config.features[feature.id]))
-                            }
-                        }
-                    },
-                    vendor = mapOf(
-                        "dev.hive/HiveConfig" to linkedMapOf(
-                            "toolchainPlatform" to toolchain.platform.name,
-                            "compilerFamily" to toolchain.compilerFamily.name,
-                        ),
-                    ),
-                )
+                catalog.buildConfigs.flatMap { buildConfig ->
+                    val sharedVariants = if (mode == "Editor") listOf(false, true) else listOf(false)
+                    sharedVariants.map { shared ->
+                        val presetName = presetNameFor(mode, buildConfig, shared)
+                        UserConfigurePreset(
+                            name = presetName,
+                            inherits = inheritedBase,
+                            displayName = "HiveEngine $mode ($buildConfig${if (shared) " Shared" else ""})",
+                            description = catalog.presetDefaults[mode]?.description,
+                            binaryDir = "\${sourceDir}/out/build/\${presetName}",
+                            cacheVariables = linkedMapOf<String, String>().apply {
+                                put("CMAKE_BUILD_TYPE", buildConfig)
+                                put("HIVE_ENGINE_MODE", mode)
+                                if (shared) {
+                                    put("HIVE_BUILD_SHARED", "ON")
+                                }
+                                REQUIRED_FEATURE_IDS.forEach { featureId ->
+                                    val feature = featuresById[featureId] ?: return@forEach
+                                    feature.cmakeVar?.let { cmakeVar ->
+                                        put(cmakeVar, toCMakeValue(feature, config.features[feature.id]))
+                                    }
+                                }
+                            },
+                            vendor = mapOf(
+                                "dev.hive/HiveConfig" to linkedMapOf(
+                                    "toolchainPlatform" to toolchain.platform.name,
+                                    "compilerFamily" to toolchain.compilerFamily.name,
+                                ),
+                            ),
+                        )
+                    }
+                }
             },
         )
     }
@@ -222,7 +231,10 @@ object CMakeUserPresetsGenerator {
     private fun forcedValueFor(feature: FeatureDefinition, mode: String): String =
         if (feature.type == "bool") "false" else feature.defaultValueFor(mode)
 
-    private fun presetNameFor(mode: String): String = "hive-${mode.lowercase()}"
+    private fun presetNameFor(mode: String, buildConfig: String, shared: Boolean = false): String {
+        val suffix = if (shared) "-shared" else ""
+        return "hive-${mode.lowercase()}-${buildConfig.lowercase()}$suffix"
+    }
 
     private fun toCMakeValue(feature: FeatureDefinition, value: String?): String =
         when (feature.type) {

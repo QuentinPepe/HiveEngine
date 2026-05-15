@@ -21,45 +21,9 @@ namespace queen
 {
     class World;
 
-    /**
-     * Parallel scheduler for ECS systems
-     *
-     * ParallelScheduler executes independent systems in parallel using a
-     * work-stealing thread pool. Systems with conflicting data access
-     * are serialized to ensure correctness.
-     *
-     * Use cases:
-     * - Multi-threaded system execution
-     * - Scaling ECS across multiple cores
-     * - Maximum throughput for independent systems
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ graph_: DependencyGraph (system dependencies)                   │
-     * │ pool_: ThreadPool* (worker threads)                             │
-     * │ owns_pool_: bool (whether we created the pool)                  │
-     * │ remaining_: atomic<size_t>* (per-node remaining deps)           │
-     * │ remaining_count_: size_t (size of remaining array)              │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Algorithm:
-     * 1. Reset dependency counts for all nodes
-     * 2. Submit root systems (no dependencies) to thread pool
-     * 3. When a system completes, decrement dependency counts of dependents
-     * 4. When a dependent's count reaches 0, submit it to thread pool
-     * 5. Wait for all systems to complete
-     * 6. Flush command buffers
-     *
-     * Performance characteristics:
-     * - Build: O(N^2) where N = number of systems
-     * - Update: O(N/P) with P workers for independent systems
-     * - Parallel speedup depends on system graph structure
-     *
-     * Limitations:
-     * - Systems must be thread-safe
-     * - Command buffers are flushed after all systems (sync point)
-     * - Overhead from scheduling may not help for trivial systems
-     */
+    // Submits ready systems to a Drone job pool, decrementing per-node atomic
+    // counters as dependencies complete. Roots fan out first; the frame ends when
+    // every node's counter reaches zero. Command buffers flush once per frame.
     template <comb::Allocator Allocator> class ParallelScheduler
     {
     public:
@@ -89,42 +53,24 @@ namespace queen
         ParallelScheduler(ParallelScheduler&&) = delete;
         ParallelScheduler& operator=(ParallelScheduler&&) = delete;
 
-        /**
-         * Build/rebuild the dependency graph from system storage
-         */
         void Build(const SystemStorage<Allocator>& storage)
         {
             m_graph.Build(storage);
             ReallocateRemaining(m_graph.NodeCount());
         }
 
-        /**
-         * Mark the graph as needing rebuild
-         */
         void Invalidate() noexcept
         {
             m_graph.MarkDirty();
         }
 
-        /**
-         * Check if the graph needs rebuild
-         */
         [[nodiscard]] bool NeedsRebuild() const noexcept
         {
             return m_graph.IsDirty();
         }
 
-        /**
-         * Run all systems in parallel where possible
-         *
-         * Independent systems are executed concurrently. Dependent systems
-         * wait for their dependencies to complete before executing.
-         */
         void RunAll(World& world, SystemStorage<Allocator>& storage); // Implementation in parallel_scheduler_impl.h
 
-        /**
-         * Get the dependency graph
-         */
         [[nodiscard]] const DependencyGraph<Allocator>& Graph() const noexcept
         {
             return m_graph;
@@ -140,17 +86,11 @@ namespace queen
             return m_jobs;
         }
 
-        /**
-         * Get the execution order (for debugging/visualization)
-         */
         [[nodiscard]] const wax::Vector<uint32_t>& ExecutionOrder() const noexcept
         {
             return m_graph.ExecutionOrder();
         }
 
-        /**
-         * Check if the dependency graph has cycles
-         */
         [[nodiscard]] bool HasCycle() const noexcept
         {
             return m_graph.HasCycle();

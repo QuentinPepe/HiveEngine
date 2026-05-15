@@ -40,101 +40,29 @@ namespace queen
     using ComponentAllocator = comb::BuddyAllocator;
     using FrameAllocator = comb::LinearAllocator;
 
-    /**
-     * Central ECS world containing all entities, components, and resources
-     *
-     * The World is the main entry point for the ECS. It manages entity lifecycle,
-     * component storage, resources (global singletons), and provides access to
-     * queries.
-     *
-     * Memory is managed through WorldAllocators which provides:
-     * - Persistent allocator (BuddyAllocator): Archetypes, systems, graphs
-     * - Component allocator (BuddyAllocator): Entity data, table columns
-     * - Frame allocator (LinearAllocator): Per-frame temporary data, reset each Update()
-     * - Thread allocators (LinearAllocator per thread): Parallel execution
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ Persistent (BuddyAllocator)                                    │
-     * │ - archetype_graph_: All archetypes with transitions            │
-     * │ - component_index_: TypeId -> Archetypes reverse lookup        │
-     * │ - systems_: System storage and metadata                        │
-     * │ - scheduler_: Dependency graph and execution order             │
-     * │ - resources_: TypeId -> void* global singleton storage         │
-     * ├────────────────────────────────────────────────────────────────┤
-     * │ Components (BuddyAllocator)                                    │
-     * │ - entity_allocator_: Entity ID allocation and recycling        │
-     * │ - entity_locations_: Entity -> (Archetype, Row) mapping        │
-     * │ - Table column data                                            │
-     * ├────────────────────────────────────────────────────────────────┤
-     * │ Frame (LinearAllocator) - Reset each Update()                  │
-     * │ - commands_: Deferred command buffers                          │
-     * │ - Temporary query results                                      │
-     * ├────────────────────────────────────────────────────────────────┤
-     * │ Thread[0..N] (LinearAllocator per thread)                      │
-     * │ - Per-thread temporary allocations                             │
-     * │ - Parallel system execution data                               │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Spawn: O(1) amortized (archetype lookup cached)
-     * - Despawn: O(n) where n = components (moves data)
-     * - Get<T>: O(1) (location lookup + column access)
-     * - Add<T>: O(n) (archetype transition, data move)
-     * - Remove<T>: O(n) (archetype transition, data move)
-     * - IsAlive: O(1)
-     * - Resource<T>: O(1) (hash map lookup)
-     * - InsertResource<T>: O(1) amortized (hash map insert)
-     *
-     * Limitations:
-     * - Not thread-safe (use command buffers for cross-thread operations)
-     *
-     * Example:
-     * @code
-     *   // Create with default allocator sizes
-     *   queen::World world;
-     *
-     *   // Or with custom configuration
-     *   queen::WorldAllocatorConfig config;
-     *   config.persistent_size = 16_MB;
-     *   config.component_size = 128_MB;
-     *   queen::World world{config};
-     *
-     *   // Entities and components
-     *   auto entity = world.Spawn()
-     *       .With(Position{1.0f, 2.0f, 3.0f})
-     *       .With(Velocity{0.1f, 0.0f, 0.0f})
-     *       .Build();
-     *
-     *   Position* pos = world.Get<Position>(entity);
-     *   world.Despawn(entity);
-     *
-     *   // Resources (global singletons)
-     *   world.InsertResource(Time{0.0f, 0.016f});
-     *   Time* time = world.Resource<Time>();
-     *   time->delta = 0.033f;
-     *
-     *   // Update (sequential or parallel)
-     *   world.Update();           // Sequential
-     *   world.UpdateParallel(jobs);  // Parallel via Drone job system
-     * @endcode
-     */
+    // Central ECS container. Owns entities, archetypes, systems, resources and
+    // events, all backed by tiered allocators (persistent / component / frame /
+    // per-thread) so different lifetimes never share the same arena.
+    //
+    // Not thread-safe by itself: cross-thread mutation must go through the
+    // per-thread CommandBuffers exposed via GetCommands(), which the scheduler
+    // flushes at the end of each frame.
+    //
+    // Allocator tiers:
+    //   Persistent  ┐  long-lived: archetype graph, systems, resources
+    //   Components  ┤  entity rows / table columns
+    //   Frame       ┤  per-frame scratch, reset at end of Update()
+    //   Thread[0..N]┘  per-worker scratch for parallel scheduling
     class World
     {
     public:
         using EntityRecord = EntityRecordT<Archetype<ComponentAllocator>>;
 
-        /**
-         * Create World with default allocator configuration
-         */
         World()
             : World(WorldAllocatorConfig{})
         {
         }
 
-        /**
-         * Create World with custom allocator configuration
-         */
         explicit World(const WorldAllocatorConfig& config)
             : m_allocators{config.m_persistentSize, config.m_componentSize, config.m_frameSize,
                            config.m_threadFrameSize, config.m_threadCount}
@@ -435,12 +363,9 @@ namespace queen
             Add<T>(entity, std::forward<T>(component));
         }
 
-        /**
-         * Add or replace a component on an entity using type-erased metadata.
-         *
-         * Used by the editor where the component type is only known at runtime.
-         * Fires OnAdd / OnSet observers through the TypeId-keyed dispatch.
-         */
+        // Type-erased Add used by the editor and serialization paths where the
+        // component type is only known at runtime. Fires OnAdd/OnSet through the
+        // TypeId-keyed observer dispatch.
         void AddRaw(Entity entity, const ComponentMeta& meta, const void* sourceData)
         {
             HIVE_PROFILE_SCOPE_N("World::AddRaw");
@@ -474,11 +399,8 @@ namespace queen
             m_observers.Trigger(TriggerType::ADD, meta.m_typeId, *this, entity, comp);
         }
 
-        /**
-         * Remove a component identified by TypeId. Counterpart to AddRaw.
-         * Fires the OnRemove observer BEFORE moving the entity so handlers
-         * can still read the component data.
-         */
+        // Counterpart to AddRaw. Fires OnRemove BEFORE the archetype move so
+        // handlers can still read the component being removed.
         void RemoveByTypeId(Entity entity, TypeId typeId)
         {
             HIVE_PROFILE_SCOPE_N("World::RemoveByTypeId");
@@ -516,11 +438,7 @@ namespace queen
             return m_archetypeGraph.ArchetypeCount();
         }
 
-        /**
-         * Iterate over all non-empty archetypes
-         *
-         * @param callback Called for each archetype that contains at least one entity
-         */
+        // Skips empty archetypes so editors/inspectors only see live data.
         template <typename F> void ForEachArchetype(F&& callback) const
         {
             const auto& archetypes = m_archetypeGraph.GetArchetypes();
@@ -533,11 +451,6 @@ namespace queen
             }
         }
 
-        /**
-         * Get raw component data for an entity by TypeId
-         *
-         * @return Pointer to component data, or nullptr if entity doesn't have that component
-         */
         [[nodiscard]] void* GetComponentRaw(Entity entity, TypeId typeId) noexcept
         {
             if (!IsAlive(entity))
@@ -550,12 +463,7 @@ namespace queen
             return record->m_archetype->GetComponentRaw(record->m_row, typeId);
         }
 
-        /**
-         * Iterate all component TypeIds on an entity
-         *
-         * Callback receives each TypeId in the entity's archetype.
-         * Useful for generic inspection (editor, serialization).
-         */
+        // Generic per-TypeId walk for editor inspection and serialization paths.
         template <typename F> void ForEachComponentType(Entity entity, F&& callback) const
         {
             if (!IsAlive(entity))
@@ -675,33 +583,21 @@ namespace queen
             return m_allocators;
         }
 
-        /**
-         * Get the persistent allocator (for long-lived metadata)
-         */
         [[nodiscard]] PersistentAllocator& GetPersistentAllocator() noexcept
         {
             return m_allocators.Persistent();
         }
 
-        /**
-         * Get the component allocator (for entity data)
-         */
         [[nodiscard]] ComponentAllocator& GetComponentAllocator() noexcept
         {
             return m_allocators.Components();
         }
 
-        /**
-         * Get the frame allocator (for per-frame temporary data)
-         */
         [[nodiscard]] FrameAllocator& GetFrameAllocator() noexcept
         {
             return m_allocators.Frame();
         }
 
-        /**
-         * Get a thread-local allocator for parallel execution
-         */
         [[nodiscard]] FrameAllocator& GetThreadAllocator(size_t threadIndex) noexcept
         {
             return m_allocators.ThreadFrame(threadIndex);
@@ -719,47 +615,23 @@ namespace queen
 
         // Queries
 
-        /**
-         * Create a query to iterate over entities matching the given terms
-         *
-         * Thread-safe: Protected by mutex during query construction.
-         * Query iteration (Each/EachWithEntity) is lock-free after construction.
-         *
-         * Example:
-         * @code
-         *   world.Query<Read<Position>, Write<Velocity>>()
-         *       .Each([](const Position& pos, Velocity& vel) {
-         *           vel.dx += pos.x * 0.1f;
-         *       });
-         * @endcode
-         */
+        // Construction holds the persistent mutex; iteration is lock-free once
+        // the Query is built. For parallel workers prefer QueryEachLocked.
         template <typename... Terms> [[nodiscard]] queen::Query<PersistentAllocator, Terms...> Query()
         {
             std::lock_guard<HIVE_PROFILE_LOCKABLE_BASE(std::mutex)> lock{m_allocators.PersistentMutex()};
             return queen::Query<PersistentAllocator, Terms...>{m_allocators.Persistent(), m_componentIndex};
         }
 
-        /**
-         * Execute a callback with a query, holding the lock for the entire lifetime
-         *
-         * Thread-safe: The mutex is held during query construction, iteration, AND destruction.
-         * Use this for parallel system execution to avoid race conditions.
-         *
-         * @param callback Function to call with the query (e.g., query.Each(...))
-         */
+        // Locked variant: the mutex is held across construction, callback, and
+        // destruction so parallel workers cannot race the archetype graph.
         template <typename... Terms, typename Callback> void QueryEach(Callback&& callback)
         {
             std::lock_guard<HIVE_PROFILE_LOCKABLE_BASE(std::mutex)> lock{m_allocators.PersistentMutex()};
             queen::Query<PersistentAllocator, Terms...> query{m_allocators.Persistent(), m_componentIndex};
             callback(query);
-            // Query destructor runs here while still holding the lock
         }
 
-        /**
-         * Execute Each() on a query with full lock protection
-         *
-         * Thread-safe version for parallel execution.
-         */
         template <typename... Terms, typename F> void QueryEachLocked(F&& func)
         {
             std::lock_guard<HIVE_PROFILE_LOCKABLE_BASE(std::mutex)> lock{m_allocators.PersistentMutex()};
@@ -767,11 +639,6 @@ namespace queen
             query.Each(std::forward<F>(func));
         }
 
-        /**
-         * Execute EachWithEntity() on a query with full lock protection
-         *
-         * Thread-safe version for parallel execution.
-         */
         template <typename... Terms, typename F> void QueryEachWithEntityLocked(F&& func)
         {
             std::lock_guard<HIVE_PROFILE_LOCKABLE_BASE(std::mutex)> lock{m_allocators.PersistentMutex()};
@@ -781,17 +648,6 @@ namespace queen
 
         // Systems
 
-        /**
-         * Register a new system with query-based iteration
-         *
-         * Example:
-         * @code
-         *   world.System<Read<Position>, Write<Velocity>>("Movement")
-         *       .Each([](const Position& pos, Velocity& vel) {
-         *           vel.dx += pos.x * 0.1f;
-         *       });
-         * @endcode
-         */
         template <typename... Terms> [[nodiscard]] SystemBuilder<PersistentAllocator, Terms...> System(const char* name)
         {
             return m_systems.template Register<Terms...>(*this, name);
@@ -849,13 +705,8 @@ namespace queen
             return m_systems;
         }
 
-        /**
-         * Advance the world by one tick (run all systems, no frame marker)
-         *
-         * Same as Update() but without HIVE_PROFILE_FRAME. Use this in
-         * fixed-timestep loops where multiple advances happen per rendered frame.
-         * The caller is responsible for emitting HIVE_PROFILE_FRAME once per frame.
-         */
+        // Fixed-timestep loops call Advance multiple times per render frame; the
+        // caller is responsible for emitting HIVE_PROFILE_FRAME exactly once.
         void Advance()
         {
             HIVE_PROFILE_SCOPE_N("World::Advance");
@@ -867,13 +718,8 @@ namespace queen
             HIVE_PROFILE_PLOT("World::ArchetypeCount", static_cast<int64_t>(ArchetypeCount()));
         }
 
-        /**
-         * Advance the world using parallel execution (no frame marker)
-         *
-         * Same as UpdateParallel() but without HIVE_PROFILE_FRAME.
-         *
-         * @param jobs Drone job submitter for parallel execution
-         */
+        // Parallel counterpart of Advance. Lazily creates the parallel scheduler
+        // on first call since most worlds never need it.
         void AdvanceParallel(drone::JobSubmitter jobs)
         {
             HIVE_PROFILE_SCOPE_N("World::AdvanceParallel");
@@ -894,30 +740,12 @@ namespace queen
             HIVE_PROFILE_PLOT("World::ArchetypeCount", static_cast<int64_t>(ArchetypeCount()));
         }
 
-        /**
-         * Update the world by running all systems in dependency order
-         *
-         * This uses the scheduler to compute the correct execution order
-         * based on access patterns and explicit ordering constraints.
-         * The world tick is incremented at the start of each Update().
-         * The frame allocator is reset at the end.
-         */
         void Update()
         {
             Advance();
             HIVE_PROFILE_FRAME;
         }
 
-        /**
-         * Update the world using parallel execution
-         *
-         * Independent systems are executed concurrently using a thread pool.
-         * Systems with conflicting data access are serialized.
-         * Creates the parallel scheduler on first call.
-         * Thread allocators are reset after each system batch.
-         *
-         * @param jobs Drone job submitter for parallel execution
-         */
         void UpdateParallel(drone::JobSubmitter jobs)
         {
             AdvanceParallel(jobs);
@@ -949,12 +777,8 @@ namespace queen
             return m_parallelScheduler != nullptr;
         }
 
-        /**
-         * Invalidate the scheduler's dependency graph
-         *
-         * Call this when systems are added or modified to force rebuild.
-         * Invalidates both sequential and parallel schedulers.
-         */
+        // Must be called after any system mutation so the next Update rebuilds
+        // the dependency graph; invalidates sequential and parallel schedulers.
         void InvalidateScheduler() noexcept
         {
             m_scheduler.Invalidate();
@@ -964,12 +788,8 @@ namespace queen
             }
         }
 
-        /**
-         * Get the thread-local command buffer collection
-         *
-         * Use this to get a CommandBuffer for the current thread.
-         * Commands are automatically flushed at the end of Update().
-         */
+        // Commands collected through this handle are flushed automatically at the
+        // end of every Update/Advance, so cross-thread mutations stay deferred.
         [[nodiscard]] Commands<PersistentAllocator>& GetCommands() noexcept
         {
             return m_commands;
@@ -992,34 +812,16 @@ namespace queen
             return m_events;
         }
 
-        /**
-         * Send an event (adds to current frame's queue)
-         *
-         * @tparam E Event type
-         * @param event The event to send
-         */
         template <typename E> void SendEvent(E&& event)
         {
             m_events.template Send<std::decay_t<E>>(std::forward<E>(event));
         }
 
-        /**
-         * Get an EventWriter for a specific event type
-         *
-         * @tparam E Event type
-         * @return EventWriter for sending events
-         */
         template <typename E> [[nodiscard]] EventWriter<E, PersistentAllocator> EventWriter()
         {
             return m_events.template Writer<E>();
         }
 
-        /**
-         * Get an EventReader for a specific event type
-         *
-         * @tparam E Event type
-         * @return EventReader for reading events
-         */
         template <typename E> [[nodiscard]] queen::EventReader<E, PersistentAllocator> EventReader()
         {
             return m_events.template Reader<E>();
@@ -1027,21 +829,6 @@ namespace queen
 
         // Observers
 
-        /**
-         * Register an observer for structural changes
-         *
-         * @tparam TriggerEvent The trigger type (OnAdd<T>, OnRemove<T>, OnSet<T>)
-         * @param name Observer name for debugging
-         * @return ObserverBuilder for fluent configuration
-         *
-         * Example:
-         * @code
-         *   world.Observer<OnAdd<Health>>("LogSpawn")
-         *       .Each([](Entity e, const Health& hp) {
-         *           Log("Entity {} has {} HP", e.Index(), hp.value);
-         *       });
-         * @endcode
-         */
         template <ObserverTrigger TriggerEvent>
         [[nodiscard]] ObserverBuilder<TriggerEvent, PersistentAllocator> Observer(const char* name)
         {
@@ -1075,15 +862,8 @@ namespace queen
 
         // Hierarchy
 
-        /**
-         * Set the parent of an entity
-         *
-         * If the entity already has a parent, it is removed from the
-         * old parent's children list first.
-         *
-         * @param child Entity to set parent for
-         * @param parent Parent entity (must be alive)
-         */
+        // Detaches child from its previous parent first so the old Children
+        // component stays consistent. Asserts on self-parenting and cycles.
         void SetParent(Entity child, Entity parent)
         {
             hive::Assert(IsAlive(child), "Child entity must be alive");
@@ -1129,11 +909,6 @@ namespace queen
             }
         }
 
-        /**
-         * Remove the parent from an entity (make it a root)
-         *
-         * @param child Entity to remove parent from
-         */
         void RemoveParent(Entity child)
         {
             if (!IsAlive(child))
@@ -1184,12 +959,6 @@ namespace queen
             return children->IndexOf(child);
         }
 
-        /**
-         * Get the parent of an entity
-         *
-         * @param child Entity to get parent of
-         * @return Parent entity, or Entity::Invalid() if no parent
-         */
         [[nodiscard]] Entity GetParent(Entity child) const noexcept
         {
             const Parent* parentComp = Get<Parent>(child);
@@ -1205,12 +974,6 @@ namespace queen
             return Has<Parent>(child);
         }
 
-        /**
-         * Get children component of an entity
-         *
-         * @param parent Entity to get children of
-         * @return Pointer to Children component, or nullptr if no children
-         */
         [[nodiscard]] Children* GetChildren(Entity parent) noexcept
         {
             return Get<Children>(parent);
@@ -1231,12 +994,6 @@ namespace queen
             return children->Count();
         }
 
-        /**
-         * Iterate over all children of an entity
-         *
-         * @param parent Parent entity
-         * @param callback Called for each child
-         */
         template <typename F> void ForEachChild(Entity parent, F&& callback)
         {
             const Children* children = Get<Children>(parent);
@@ -1251,12 +1008,8 @@ namespace queen
             }
         }
 
-        /**
-         * Iterate over all descendants (recursive, depth-first)
-         *
-         * @param root Root entity
-         * @param callback Called for each descendant (not including root)
-         */
+        // Depth-first walk using the frame allocator for the scratch stack.
+        // Callback never receives the root itself.
         template <typename F> void ForEachDescendant(Entity root, F&& callback)
         {
             // Depth-first traversal using frame allocator stack
@@ -1289,9 +1042,6 @@ namespace queen
             }
         }
 
-        /**
-         * Check if an entity is a descendant of another
-         */
         [[nodiscard]] bool IsDescendantOf(Entity entity, Entity ancestor) const noexcept
         {
             static constexpr uint32_t kMaxHierarchyDepth = 1024;
@@ -1351,11 +1101,8 @@ namespace queen
             return depth;
         }
 
-        /**
-         * Despawn an entity and all its descendants
-         *
-         * Children are despawned first (depth-first), then the entity itself.
-         */
+        // Despawns deepest descendants first to keep parent/children components
+        // consistent throughout the traversal.
         void DespawnRecursive(Entity entity)
         {
             HIVE_PROFILE_SCOPE_N("World::DespawnRecursive");
@@ -1383,20 +1130,13 @@ namespace queen
 
         // Change Detection
 
-        /**
-         * Get the current world tick
-         */
         [[nodiscard]] Tick CurrentTick() const noexcept
         {
             return m_currentTick;
         }
 
-        /**
-         * Increment the world tick
-         *
-         * Called automatically at the start of Update(). Can also be called
-         * manually to advance the tick without running systems.
-         */
+        // Called automatically by Advance; exposed so external loops can step
+        // the tick (for change detection) without running systems.
         void IncrementTick() noexcept
         {
             ++m_currentTick;
@@ -1503,17 +1243,8 @@ namespace queen
         Tick m_currentTick{1}; // Start at 1 so tick 0 means "never changed"
     };
 
-    /**
-     * Builder for spawning entities with components
-     *
-     * Example:
-     * @code
-     *   auto entity = world.Spawn()
-     *       .With(Position{1.0f, 2.0f, 3.0f})
-     *       .With(Velocity{0.1f, 0.0f, 0.0f})
-     *       .Build();
-     * @endcode
-     */
+    // Defers archetype lookup until Build(), so With() can be called repeatedly
+    // without paying the cost of an archetype transition on each addition.
     class EntityBuilder
     {
     public:

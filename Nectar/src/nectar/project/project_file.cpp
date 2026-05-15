@@ -41,7 +41,7 @@ namespace nectar
 
         wax::String path{*m_alloc, filePath};
         FILE* file = std::fopen(path.CStr(), "rb");
-        if (!file)
+        if (file == nullptr)
         {
             HiveParseError err{};
             err.m_line = 0;
@@ -121,7 +121,7 @@ namespace nectar
         wax::String path{*m_alloc, filePath};
 
         FILE* file = std::fopen(path.CStr(), "wb");
-        if (!file)
+        if (file == nullptr)
         {
             return false;
         }

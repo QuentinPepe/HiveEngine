@@ -35,7 +35,9 @@ namespace forge
                                                         const MultiFieldContext& ctx)
     {
         if (field.m_enumInfo == nullptr || !field.m_enumInfo->IsValid())
+        {
             return nullptr;
+        }
 
         auto& world = *ctx.m_world;
         const auto& entities = *ctx.m_entities;
@@ -57,7 +59,9 @@ namespace forge
             combo->addItem(QString::fromUtf8(entry.m_name),
                            QVariant{static_cast<qlonglong>(entry.m_value)});
             if (entry.m_value == currentValue)
+            {
                 currentIndex = static_cast<int>(i);
+            }
         }
 
         if (!uniform)
@@ -76,10 +80,14 @@ namespace forge
             [this, combo, &world, entities = entities, typeId, offset,
              fieldSize = field.m_size, editorUndo](int index) {
                 if (index < 0)
+                {
                     return;
+                }
                 int64_t newValue = combo->itemData(index).toLongLong();
                 if (newValue == -1)
+                {
                     return;
+                }
 
                 struct EnumSnap
                 {
@@ -91,7 +99,9 @@ namespace forge
                 {
                     void* comp = world.GetComponentRaw(entities[i], typeId);
                     if (comp == nullptr)
+                    {
                         continue;
+                    }
                     auto* ptr = static_cast<std::byte*>(comp) + offset;
                     int64_t old = 0;
                     std::memcpy(&old, ptr, fieldSize);
@@ -107,8 +117,10 @@ namespace forge
                         {
                             void* comp = world.GetComponentRaw(snap.e, typeId);
                             if (comp != nullptr)
+                            {
                                 std::memcpy(static_cast<std::byte*>(comp) + offset,
                                             &snap.val, fieldSize);
+                            }
                         }
                     },
                     [&world, typeId, offset, fieldSize, newValue, captured] {
@@ -117,8 +129,10 @@ namespace forge
                             void* comp =
                                 world.GetComponentRaw((*captured)[i], typeId);
                             if (comp != nullptr)
+                            {
                                 std::memcpy(static_cast<std::byte*>(comp) + offset,
                                             &newValue, fieldSize);
+                            }
                         }
                     });
                 emit sceneModified();
@@ -159,7 +173,9 @@ namespace forge
                     [this, btn, &world, entities = entities, typeId, offset, editorUndo] {
                         void* first = world.GetComponentRaw(entities[0], typeId);
                         if (first == nullptr)
+                        {
                             return;
+                        }
                         auto* f = reinterpret_cast<float*>(
                             static_cast<std::byte*>(first) + offset);
                         QColor cur = QColor::fromRgbF(
@@ -168,7 +184,9 @@ namespace forge
 
                         QColor picked = QColorDialog::getColor(cur, btn);
                         if (!picked.isValid())
+                        {
                             return;
+                        }
 
                         struct ColorSnap
                         {
@@ -184,7 +202,9 @@ namespace forge
                         {
                             void* comp = world.GetComponentRaw(entities[i], typeId);
                             if (comp == nullptr)
+                            {
                                 continue;
+                            }
                             auto* rgb = reinterpret_cast<float*>(
                                 static_cast<std::byte*>(comp) + offset);
                             before->push_back({entities[i], {rgb[0], rgb[1], rgb[2]}});
@@ -205,7 +225,9 @@ namespace forge
                                 {
                                     void* comp = world.GetComponentRaw(snap.e, typeId);
                                     if (comp == nullptr)
+                                    {
                                         continue;
+                                    }
                                     auto* rgb = reinterpret_cast<float*>(
                                         static_cast<std::byte*>(comp) + offset);
                                     rgb[0] = snap.rgb[0];
@@ -219,7 +241,9 @@ namespace forge
                                     void* comp =
                                         world.GetComponentRaw((*captured)[i], typeId);
                                     if (comp == nullptr)
+                                    {
                                         continue;
+                                    }
                                     auto* rgb = reinterpret_cast<float*>(
                                         static_cast<std::byte*>(comp) + offset);
                                     rgb[0] = nr;
@@ -241,7 +265,9 @@ namespace forge
                     static_cast<uint16_t>(sizeof(float)));
                 configs[i].m_value = axisUniform ? static_cast<double>(floats[i]) : -1e15;
                 if (!axisUniform)
+                {
                     configs[i].m_min = -1e15;
+                }
             }
 
             return BuildAxisRow(
@@ -256,7 +282,9 @@ namespace forge
                     {
                         void* comp = world.GetComponentRaw(entities[i], typeId);
                         if (comp == nullptr)
+                        {
                             continue;
+                        }
                         auto* ptr = reinterpret_cast<float*>(
                             static_cast<std::byte*>(comp) + axisOff);
                         before->push_back({entities[i], *ptr});
@@ -271,8 +299,10 @@ namespace forge
                             {
                                 void* comp = world.GetComponentRaw(e, typeId);
                                 if (comp != nullptr)
+                                {
                                     *reinterpret_cast<float*>(
                                         static_cast<std::byte*>(comp) + axisOff) = val;
+                                }
                             }
                         },
                         [&world, typeId, axisOff, newVal, captured] {
@@ -281,8 +311,10 @@ namespace forge
                                 void* comp =
                                     world.GetComponentRaw((*captured)[i], typeId);
                                 if (comp != nullptr)
+                                {
                                     *reinterpret_cast<float*>(
                                         static_cast<std::byte*>(comp) + axisOff) = newVal;
+                                }
                             }
                         });
                     emit sceneModified();
@@ -318,7 +350,9 @@ namespace forge
                     {
                         void* comp = world.GetComponentRaw(entities[i], typeId);
                         if (comp == nullptr)
+                        {
                             continue;
+                        }
                         auto* q = reinterpret_cast<float*>(
                             static_cast<std::byte*>(comp) + offset);
                         QuatSnap snap;
@@ -340,8 +374,10 @@ namespace forge
                             {
                                 void* comp = world.GetComponentRaw(snap.e, typeId);
                                 if (comp != nullptr)
+                                {
                                     std::memcpy(static_cast<std::byte*>(comp) + offset,
                                                 snap.q, 16);
+                                }
                             }
                         },
                         [&world, typeId, offset, newDeg, axis = axis, captured] {
@@ -350,7 +386,9 @@ namespace forge
                                 void* comp =
                                     world.GetComponentRaw((*captured)[i], typeId);
                                 if (comp == nullptr)
+                                {
                                     continue;
+                                }
                                 auto* q = reinterpret_cast<float*>(
                                     static_cast<std::byte*>(comp) + offset);
                                 float curEuler[3];
@@ -375,7 +413,9 @@ namespace forge
             MultiFieldContext nestedCtx{ctx.m_world, ctx.m_entities, ctx.m_typeId, offset,
                                          ctx.m_editorUndo};
             for (size_t i = 0; i < field.m_nestedFieldCount; ++i)
+            {
                 BuildMultiFieldWidget(field.m_nestedFields[i], fieldData, nestedCtx, nestedForm);
+            }
             form->addRow(group);
             return nullptr;
         }
@@ -387,7 +427,9 @@ namespace forge
                                                 const MultiFieldContext& ctx, QFormLayout* form)
     {
         if (HasFlag(field, queen::FieldFlag::HIDDEN))
+        {
             return;
+        }
 
         const char* label = GetDisplayName(field);
         void* fieldData = static_cast<std::byte*>(primaryData) + field.m_offset;
@@ -427,7 +469,9 @@ namespace forge
                 auto* spin = new QSpinBox;
                 spin->setRange(-999999, 999999);
                 if (uniform)
+                {
                     spin->setValue(*static_cast<int32_t*>(fieldData));
+                }
                 else
                 {
                     spin->setSpecialValueText("--");
@@ -450,7 +494,9 @@ namespace forge
                 auto* spin = new QSpinBox;
                 spin->setRange(0, 999999);
                 if (uniform)
+                {
                     spin->setValue(static_cast<int>(*static_cast<uint32_t*>(fieldData)));
+                }
                 else
                 {
                     spin->setSpecialValueText("--");
@@ -473,15 +519,21 @@ namespace forge
                 auto* check = new QCheckBox;
                 check->setTristate(true);
                 if (uniform)
+                {
                     check->setCheckState(
                         *static_cast<bool*>(fieldData) ? Qt::Checked : Qt::Unchecked);
+                }
                 else
+                {
                     check->setCheckState(Qt::PartiallyChecked);
+                }
                 ApplyTooltip(check, field);
-                connect(check, &QCheckBox::stateChanged, this,
-                        [this, &world, entities = entities, typeId, offset, editorUndo](int state) {
+                connect(check, &QCheckBox::checkStateChanged, this,
+                        [this, &world, entities = entities, typeId, offset, editorUndo](Qt::CheckState state) {
                             if (state == Qt::PartiallyChecked)
+                            {
                                 return;
+                            }
                             ApplyMultiEdit<bool>(world, entities, typeId, offset,
                                                  state == Qt::Checked, *editorUndo);
                             emit sceneModified();
@@ -513,7 +565,9 @@ namespace forge
             case queen::FieldType::ENUM: {
                 auto* w = BuildMultiEnumFieldWidget(field, fieldData, ctx);
                 if (w != nullptr)
+                {
                     form->addRow(label, w);
+                }
                 break;
             }
 
@@ -521,10 +575,14 @@ namespace forge
                 auto* value = static_cast<wax::FixedString*>(fieldData);
                 auto* lineEdit = new QLineEdit;
                 if (uniform)
+                {
                     lineEdit->setText(QString::fromUtf8(
                         value->CStr(), static_cast<int>(value->Size())));
+                }
                 else
+                {
                     lineEdit->setPlaceholderText("--");
+                }
                 lineEdit->setMaxLength(static_cast<int>(wax::FixedString::MaxCapacity));
                 ApplyTooltip(lineEdit, field);
                 connect(lineEdit, &QLineEdit::editingFinished, this,
@@ -543,7 +601,9 @@ namespace forge
             case queen::FieldType::STRUCT: {
                 auto* w = BuildMultiStructFieldWidget(field, fieldData, ctx, form);
                 if (w != nullptr)
+                {
                     form->addRow(label, w);
+                }
                 break;
             }
 

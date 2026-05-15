@@ -27,19 +27,25 @@ namespace nectar
         char narrow[1024];
         size_t len = path.Size() < sizeof(narrow) - 1 ? path.Size() : sizeof(narrow) - 1;
         for (size_t i = 0; i < len; ++i)
+        {
             narrow[i] = path.Data()[i];
+        }
         narrow[len] = '\0';
 
         wchar_t wide[1024];
         int wlen = MultiByteToWideChar(CP_UTF8, 0, narrow, static_cast<int>(len), wide, 1024);
         if (wlen <= 0)
+        {
             return result;
+        }
         wide[wlen] = L'\0';
 
         HANDLE file =
             CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (file == INVALID_HANDLE_VALUE)
+        {
             return result;
+        }
 
         LARGE_INTEGER fileSize;
         if (!GetFileSizeEx(file, &fileSize) || fileSize.QuadPart == 0)
@@ -49,14 +55,14 @@ namespace nectar
         }
 
         HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
-        if (!mapping)
+        if (mapping == nullptr)
         {
             CloseHandle(file);
             return result;
         }
 
         void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
-        if (!view)
+        if (view == nullptr)
         {
             CloseHandle(mapping);
             CloseHandle(file);
@@ -72,12 +78,18 @@ namespace nectar
 
     void MappedFile::Close() noexcept
     {
-        if (m_data)
+        if (m_data != nullptr)
+        {
             UnmapViewOfFile(m_data);
-        if (m_mappingHandle)
+        }
+        if (m_mappingHandle != nullptr)
+        {
             CloseHandle(m_mappingHandle);
-        if (m_fileHandle)
+        }
+        if (m_fileHandle != nullptr)
+        {
             CloseHandle(m_fileHandle);
+        }
         m_data = nullptr;
         m_size = 0;
         m_fileHandle = nullptr;
@@ -95,12 +107,16 @@ namespace nectar
         char buf[1024];
         size_t len = path.Size() < sizeof(buf) - 1 ? path.Size() : sizeof(buf) - 1;
         for (size_t i = 0; i < len; ++i)
+        {
             buf[i] = path.Data()[i];
+        }
         buf[len] = '\0';
 
         int fd = ::open(buf, O_RDONLY);
         if (fd < 0)
+        {
             return result;
+        }
 
         struct stat st;
         if (::fstat(fd, &st) != 0 || st.st_size == 0)
@@ -124,10 +140,14 @@ namespace nectar
 
     void MappedFile::Close() noexcept
     {
-        if (m_data)
+        if (m_data != nullptr)
+        {
             ::munmap(m_data, m_size);
+        }
         if (fd_ >= 0)
+        {
             ::close(fd_);
+        }
         m_data = nullptr;
         m_size = 0;
         fd_ = -1;

@@ -170,10 +170,22 @@ namespace
 
         NodeId logn = g.AddNode("Log");
         PinId execIn = g.AddPin(logn, PinDirection::INPUT, PType::Signal(), "Exec");
-        if (auto* p = g.FindPin(execIn)) p->m_isExec = true;
+        {
+            auto* p = g.FindPin(execIn);
+            if (p != nullptr)
+            {
+                p->m_isExec = true;
+            }
+        }
         (void)g.AddPin(logn, PinDirection::INPUT, PType::Float32(), "value");
         PinId execOut = g.AddPin(logn, PinDirection::OUTPUT, PType::Signal(), "Exec");
-        if (auto* p = g.FindPin(execOut)) p->m_isExec = true;
+        {
+            auto* p = g.FindPin(execOut);
+            if (p != nullptr)
+            {
+                p->m_isExec = true;
+            }
+        }
 
         ParamInfo params[] = {{"value", PType::Float32()}};
         StampUserFnSignature(g, logn, "ns::Log", PType::Signal(), params, 1);

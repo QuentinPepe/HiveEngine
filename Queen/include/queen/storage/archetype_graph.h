@@ -12,48 +12,23 @@
 
 namespace queen
 {
-    /**
-     * Graph of all archetypes with cached transitions
-     *
-     * Manages the complete set of archetypes in the ECS world. Provides O(1)
-     * lookup by ArchetypeId and lazy creation of new archetypes when
-     * components are added or removed from entities.
-     *
-     * Memory layout:
-     * ┌──────────────────────────────────────────────────────────────┐
-     * │ archetypes_: HashMap<ArchetypeId, Archetype*>                │
-     * │ archetype_storage_: Vector of owned Archetype pointers       │
-     * │ empty_archetype_: Archetype with no components               │
-     * └──────────────────────────────────────────────────────────────┘
-     *
-     * Transition graph (edges cached in Archetype):
-     * ┌──────────────┐    add<Velocity>    ┌──────────────────────┐
-     * │ [Position]   │ ─────────────────→  │ [Position, Velocity] │
-     * └──────────────┘                     └──────────────────────┘
-     *        ↑                                       │
-     *        │              remove<Velocity>         │
-     *        └───────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - GetArchetype: O(1) hash lookup
-     * - GetOrCreateAddTarget: O(1) cache hit, O(n) cache miss (n = components)
-     * - GetOrCreateRemoveTarget: O(1) cache hit, O(n) cache miss
-     *
-     * Limitations:
-     * - Not thread-safe
-     * - Archetypes are never removed once created
-     *
-     * Example:
-     * @code
-     *   ArchetypeGraph<...> graph{alloc};
-     *
-     *   auto* empty = graph.GetEmptyArchetype();
-     *   auto* with_pos = graph.GetOrCreateAddTarget<Position>(*empty);
-     *   auto* with_pos_vel = graph.GetOrCreateAddTarget<Velocity>(*with_pos);
-     *   auto* back_to_pos = graph.GetOrCreateRemoveTarget<Velocity>(*with_pos_vel);
-     *   // back_to_pos == with_pos
-     * @endcode
-     */
+    // Owns every Archetype in a world and lazily materializes neighbours when components are
+    // added or removed. Add/remove transitions are memoized as edges on each Archetype so
+    // repeated structural moves hit the cache. Archetypes are never destroyed before the graph.
+    // Memory layout:
+    // ┌──────────────────────────────────────────────────────────────┐
+    // │ archetypes_:        HashMap<ArchetypeId, Archetype*>         │
+    // │ archetypeStorage_:  owning Vector of Archetype pointers      │
+    // │ emptyArchetype_:    archetype with no components (root)      │
+    // └──────────────────────────────────────────────────────────────┘
+    //
+    // Transition graph (edges cached in Archetype):
+    // ┌──────────────┐    add<Velocity>    ┌──────────────────────┐
+    // │ [Position]   │ ─────────────────→  │ [Position, Velocity] │
+    // └──────────────┘                     └──────────────────────┘
+    //        ↑                                       │
+    //        │              remove<Velocity>         │
+    //        └───────────────────────────────────────┘
     template <comb::Allocator Allocator> class ArchetypeGraph
     {
     public:

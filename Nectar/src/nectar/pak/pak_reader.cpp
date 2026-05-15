@@ -15,19 +15,21 @@ namespace nectar
 {
     PakReader::~PakReader()
     {
-        if (m_file)
+        if (m_file != nullptr)
+        {
             std::fclose(m_file);
-        if (m_manifest && m_alloc)
+        }
+        if (m_manifest != nullptr && m_alloc != nullptr)
         {
             std::destroy_at(m_manifest);
             m_alloc->Deallocate(m_manifest);
         }
-        if (m_assetEntries && m_alloc)
+        if (m_assetEntries != nullptr && m_alloc != nullptr)
         {
             std::destroy_at(m_assetEntries);
             m_alloc->Deallocate(m_assetEntries);
         }
-        if (m_blockEntries && m_alloc)
+        if (m_blockEntries != nullptr && m_alloc != nullptr)
         {
             std::destroy_at(m_blockEntries);
             m_alloc->Deallocate(m_blockEntries);
@@ -41,8 +43,10 @@ namespace nectar
         pathStr.Append(path.Data(), path.Size());
 
         FILE* file = std::fopen(pathStr.CStr(), "rb");
-        if (!file)
+        if (file == nullptr)
+        {
             return nullptr;
+        }
 
         // Read header
         NpakHeader header{};
@@ -105,7 +109,9 @@ namespace nectar
         auto* assetVec = new (avMem) wax::Vector<NpakAssetEntry>{alloc};
         assetVec->Resize(assetCount);
         if (assetCount > 0)
+        {
             std::memcpy(&(*assetVec)[0], ptr, assetBytes);
+        }
         ptr += assetBytes;
 
         if (ptr + sizeof(uint32_t) > end)
@@ -132,7 +138,9 @@ namespace nectar
         auto* blockVec = new (bvMem) wax::Vector<NpakBlockEntry>{alloc};
         blockVec->Resize(blockCount);
         if (blockCount > 0)
+        {
             std::memcpy(&(*blockVec)[0], ptr, blockBytes);
+        }
 
         // Build reader
         void* readerMem = alloc.Allocate(sizeof(PakReader), alignof(PakReader));
@@ -145,7 +153,7 @@ namespace nectar
 
         // Try to load manifest
         const NpakAssetEntry* manifestEntry = reader->FindAsset(kManifestSentinel);
-        if (manifestEntry)
+        if (manifestEntry != nullptr)
         {
             auto manifestBlob = reader->Read(kManifestSentinel, alloc);
             if (manifestBlob.Size() > 0)
@@ -164,8 +172,10 @@ namespace nectar
         wax::ByteBuffer result{alloc};
 
         const NpakAssetEntry* entry = FindAsset(hash);
-        if (!entry)
+        if (entry == nullptr)
+        {
             return result;
+        }
 
         size_t remaining = entry->m_uncompressedSize;
         result.Resize(remaining);
@@ -195,7 +205,9 @@ namespace nectar
             size_t blockUncompressed = kBlockSize;
             // Last block might be smaller
             if (remaining + offsetInFirstBlock < kBlockSize)
+            {
                 blockUncompressed = remaining + offsetInFirstBlock;
+            }
 
             wax::ByteBuffer decompressed{alloc};
             if (be.m_compression == CompressionMethod::NONE)
@@ -260,8 +272,10 @@ namespace nectar
 
     const NpakAssetEntry* PakReader::FindAsset(ContentHash hash) const
     {
-        if (!m_assetEntries || m_assetEntries->Size() == 0)
+        if (m_assetEntries == nullptr || m_assetEntries->Size() == 0)
+        {
             return nullptr;
+        }
 
         // Binary search — entries are sorted by content_hash
         size_t lo = 0;
@@ -271,11 +285,17 @@ namespace nectar
             size_t mid = lo + (hi - lo) / 2;
             const auto& midHash = (*m_assetEntries)[mid].m_contentHash;
             if (midHash == hash)
+            {
                 return &(*m_assetEntries)[mid];
+            }
             if (midHash < hash)
+            {
                 lo = mid + 1;
+            }
             else
+            {
                 hi = mid;
+            }
         }
         return nullptr;
     }

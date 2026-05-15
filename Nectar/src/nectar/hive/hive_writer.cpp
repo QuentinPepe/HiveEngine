@@ -63,7 +63,9 @@ namespace nectar
                     for (size_t i = 0; i < value.m_array.Size(); ++i)
                     {
                         if (i > 0)
+                        {
                             out.Append(", ", 2);
+                        }
                         out.Append('"');
                         for (size_t j = 0; j < value.m_array[i].Size(); ++j)
                         {
@@ -91,11 +93,15 @@ namespace nectar
                     for (size_t i = 0; i < value.m_floatArray.Size(); ++i)
                     {
                         if (i > 0)
+                        {
                             out.Append(", ", 2);
+                        }
                         char buf[64];
                         const int len = std::snprintf(buf, sizeof(buf), "%.6g", value.m_floatArray[i]);
                         if (len > 0)
+                        {
                             out.Append(buf, static_cast<size_t>(len));
+                        }
                     }
                     out.Append(']');
                     break;
@@ -131,7 +137,9 @@ namespace nectar
         for (size_t s = 0; s < sectionNames.Size(); ++s)
         {
             if (s > 0 || out.Size() > 0)
+            {
                 out.Append('\n');
+            }
 
             out.Append('[');
             out.Append(sectionNames[s].Data(), sectionNames[s].Size());
@@ -140,8 +148,10 @@ namespace nectar
             // Find the section
             wax::String secKey{alloc, sectionNames[s]};
             auto* section = doc.Sections().Find(secKey);
-            if (!section)
+            if (section == nullptr)
+            {
                 continue;
+            }
 
             // Collect and sort keys for deterministic output
             wax::Vector<wax::StringView> keys{alloc};
@@ -169,7 +179,7 @@ namespace nectar
 
                 wax::String valKey{alloc, keys[k]};
                 auto* value = section->Find(valKey);
-                if (value)
+                if (value != nullptr)
                 {
                     WriteValue(*value, out);
                 }

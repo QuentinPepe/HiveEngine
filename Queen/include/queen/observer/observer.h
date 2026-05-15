@@ -12,12 +12,8 @@ namespace queen
 {
     class World;
 
-    /**
-     * Unique identifier for observers
-     *
-     * ObserverId is a simple wrapper around a 32-bit integer for type safety.
-     * Used to reference observers for enable/disable operations.
-     */
+    // Strongly-typed observer handle. Value 0 is reserved as the invalid sentinel so
+    // ObserverStorage can hand out IDs starting at 1.
     class ObserverId
     {
     public:
@@ -48,73 +44,15 @@ namespace queen
         uint32_t m_value;
     };
 
-    /**
-     * Type-erased observer callback function
-     *
-     * The callback receives:
-     * - world: Reference to the World for component access
-     * - entity: The entity being observed
-     * - component: Pointer to the component data (may be nullptr for OnRemove after destruction)
-     * - user_data: User-provided closure data
-     */
+    // Type-erased observer thunk. The component pointer can be null for OnRemove invocations
+    // that fire after the component has already been destroyed; thunks must guard against this.
     using ObserverCallbackFn = void (*)(World& world, Entity entity, const void* component, void* userData);
 
-    /**
-     * Reactive callback triggered by structural ECS changes
-     *
-     * Observer is a descriptor that stores all metadata needed to execute
-     * an observer callback when a matching structural change occurs.
-     * Observers are invoked synchronously at the point of change.
-     *
-     * Trigger points:
-     * - OnAdd: Called after component is added and initialized
-     * - OnRemove: Called before component is destroyed
-     * - OnSet: Called after component value is modified
-     *
-     * Use cases:
-     * - Logging component additions/removals for debugging
-     * - Validating component data on modification
-     * - Maintaining derived state (spatial indices, caches)
-     * - Triggering side effects (audio, VFX, network sync)
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ id_: ObserverId (4 bytes)                                      │
-     * │ trigger_: TriggerType (1 byte)                                 │
-     * │ enabled_: bool (1 byte)                                        │
-     * │ padding (2 bytes)                                              │
-     * │ component_id_: TypeId (8 bytes)                                │
-     * │ callback_fn_: function pointer (8 bytes)                       │
-     * │ user_data_: void* (8 bytes)                                    │
-     * │ destructor_fn_: function pointer (8 bytes)                     │
-     * │ allocator_: Allocator* (8 bytes)                               │
-     * │ name_: char[64] (64 bytes)                                     │
-     * └────────────────────────────────────────────────────────────────┘
-     * Total: ~112 bytes
-     *
-     * Performance characteristics:
-     * - Trigger: O(1) - direct function call
-     * - Enable/disable: O(1) - flag toggle
-     * - Name lookup: O(n) - linear search (use ObserverId for fast access)
-     *
-     * Limitations:
-     * - Observer name limited to 63 characters
-     * - Synchronous execution (blocks structural change)
-     * - Cannot safely spawn/despawn during callback (use Commands)
-     * - One component type per observer
-     *
-     * Example:
-     * @code
-     *   // Created via World::Observer<>()
-     *   ObserverId id = world.Observer<OnAdd<Health>>("LogSpawn")
-     *       .Each([](Entity e, const Health& hp) {
-     *           Log("Entity {} has {} HP", e.Index(), hp.value);
-     *       });
-     *
-     *   // Disable observer
-     *   world.SetObserverEnabled(id, false);
-     * @endcode
-     */
+    // Descriptor for a single registered observer: metadata, filter list, type-erased
+    // callback and the closure storage that owns it. Owns the closure memory, so the
+    // destructor must invoke the captured user destructor before deallocation.
+    // Observers run synchronously at the structural-change site; mutations during the
+    // callback must go through Commands to avoid invalidating the in-flight operation.
     template <comb::Allocator Allocator> class Observer
     {
     public:
@@ -282,13 +220,7 @@ namespace queen
 
         // Execution
 
-        /**
-         * Invoke the observer callback
-         *
-         * @param world World reference for component access
-         * @param entity The entity being observed
-         * @param component Pointer to component data (may be nullptr)
-         */
+        // Forwards to the type-erased thunk if the observer is enabled and has a callback.
         void Invoke(World& world, Entity entity, const void* component) const
         {
             if (m_callbackFn != nullptr && m_enabled)

@@ -34,7 +34,7 @@ namespace wax
         String(const char* str)
             : m_allocator{comb::GetDefaultMemoryResource()}
         {
-            AssignFromPointer(str, str ? std::strlen(str) : 0);
+            AssignFromPointer(str, str != nullptr ? std::strlen(str) : 0);
         }
 
         String(StringView sv)
@@ -58,7 +58,7 @@ namespace wax
         String(comb::MemoryResource allocator, const char* str)
             : m_allocator{allocator}
         {
-            AssignFromPointer(str, str ? std::strlen(str) : 0);
+            AssignFromPointer(str, str != nullptr ? std::strlen(str) : 0);
         }
 
         template <comb::Allocator Allocator>
@@ -666,7 +666,7 @@ namespace wax
 
     [[nodiscard]] inline bool operator==(const String& lhs, const char* rhs) noexcept
     {
-        return lhs.Equals(StringView{rhs ? rhs : "", rhs ? std::strlen(rhs) : 0});
+        return lhs.Equals(StringView{rhs != nullptr ? rhs : "", rhs != nullptr ? std::strlen(rhs) : 0});
     }
 
     [[nodiscard]] inline bool operator==(const char* lhs, const String& rhs) noexcept

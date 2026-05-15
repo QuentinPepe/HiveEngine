@@ -9,13 +9,13 @@
 
 #include <drone/job_system.h>
 
+#include <queen/reflect/component_registry.h>
+
 #include <waggle/play_state.h>
 #include <waggle/project/gameplay_module.h>
 #include <waggle/project/project_manager.h>
 
 #if HIVE_MODE_EDITOR
-#include <queen/reflect/component_registry.h>
-
 #include <forge/forge_main_window.h>
 #include <forge/selection.h>
 #include <forge/toolbar.h>
@@ -136,13 +136,18 @@ namespace brood::launcher
         bool m_gameplayBuildRequested{false};
         bool m_gameplayAutoRebuildAttempted{false};
 
+        // Shared across modes: scene deserialization needs the engine component
+        // types registered in all three (editor, game, headless). Editor adds
+        // its own gameplay-specific registrations on top after gameplay DLL load.
+        queen::ComponentRegistry<256> m_componentRegistry;
+        waggle::PlayState m_playState{waggle::PlayState::EDITING};
+
 #if HIVE_MODE_EDITOR
         ProjectHubState m_hub;
         forge::EditorSelection m_selection;
 
         forge::GizmoState m_gizmo;
-        waggle::PlayState m_playState{waggle::PlayState::EDITING};
-        queen::ComponentRegistry<256> m_componentRegistry;
+        wax::String m_playSceneBackup;
         wax::String m_assetsRoot;
         wax::String m_currentSceneRelative;
         wax::String m_currentScenePath;

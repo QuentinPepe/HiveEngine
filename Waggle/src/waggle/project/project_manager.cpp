@@ -47,28 +47,38 @@ namespace
     {
         std::ifstream file{path, std::ios::binary | std::ios::ate};
         if (!file)
+        {
             return false;
+        }
 
         auto fileSize = file.tellg();
         if (fileSize < 12)
+        {
             return false;
+        }
 
         file.seekg(0);
         wax::ByteBuffer buf{alloc, static_cast<size_t>(fileSize)};
         buf.Resize(static_cast<size_t>(fileSize));
         file.read(reinterpret_cast<char*>(buf.Data()), fileSize);
         if (!file)
+        {
             return false;
+        }
 
         wax::BinaryReader reader{buf.View()};
 
         uint32_t magic{};
         if (!reader.TryRead(magic) || magic != kImportCacheMagic)
+        {
             return false;
+        }
 
         uint16_t version{};
         if (!reader.TryRead(version) || (version != kImportCacheVersion && version != 1))
+        {
             return false;
+        }
 
         reader.Skip(2);
 
@@ -77,7 +87,9 @@ namespace
         for (uint32_t i = 0; i < count; ++i)
         {
             if (reader.Remaining() < 16)
+            {
                 break;
+            }
 
             uint64_t idHigh = reader.Read<uint64_t>();
             uint64_t idLow = reader.Read<uint64_t>();
@@ -95,11 +107,15 @@ namespace
 
             wax::ByteSpan importSourceSpan{};
             if (version >= 2)
+            {
                 importSourceSpan = reader.ReadString();
+            }
 
             uint32_t labelCount = reader.Read<uint32_t>();
             for (uint32_t j = 0; j < labelCount; ++j)
+            {
                 (void)reader.ReadString();
+            }
 
             nectar::AssetRecord record{};
             record.m_uuid = nectar::AssetId{idHigh, idLow};
@@ -111,8 +127,10 @@ namespace
             record.m_name.Append(reinterpret_cast<const char*>(nameSpan.Data()), nameSpan.Size());
             record.m_importSource = wax::String{alloc};
             if (importSourceSpan.Size() > 0)
+            {
                 record.m_importSource.Append(reinterpret_cast<const char*>(importSourceSpan.Data()),
                                              importSourceSpan.Size());
+            }
             record.m_contentHash = nectar::ContentHash{chHigh, chLow};
             record.m_intermediateHash = nectar::ContentHash{ihHigh, ihLow};
             record.m_importVersion = impVersion;
@@ -154,7 +172,9 @@ namespace
         auto span = writer.View();
         std::ofstream file{path, std::ios::binary};
         if (!file)
+        {
             return false;
+        }
 
         file.write(reinterpret_cast<const char*>(span.Data()), static_cast<std::streamsize>(span.Size()));
         return file.good();
@@ -172,7 +192,9 @@ namespace waggle
         {
             auto handle = server.FindHandle<T>(path);
             if (!handle.IsNull())
+            {
                 server.Reload<T>(handle, data);
+            }
         }
     } // namespace
 
@@ -194,7 +216,9 @@ namespace waggle
     bool ProjectManager::Open(wax::StringView projectHivePath, const ProjectConfig& config)
     {
         if (m_open)
+        {
             Close();
+        }
 
         auto loadResult = m_project.LoadFromDisk(projectHivePath);
         if (!loadResult.m_success)
@@ -248,11 +272,15 @@ namespace waggle
                 for (const auto& entry : std::filesystem::recursive_directory_iterator(assetsPath, scanEc))
                 {
                     if (!entry.is_regular_file())
+                    {
                         continue;
+                    }
 
                     auto ext = entry.path().extension().string();
                     if (ext != ".hiveid")
+                    {
                         continue;
+                    }
 
                     auto assetFilePath = entry.path();
                     assetFilePath.replace_extension();
@@ -261,10 +289,14 @@ namespace waggle
 
                     nectar::HiveIdData hid{};
                     if (!nectar::ReadHiveId(assetFilePath.string().c_str(), hid, *m_alloc))
+                    {
                         continue;
+                    }
 
                     if (m_importDb->Contains(hid.m_guid))
+                    {
                         continue;
+                    }
 
                     nectar::AssetRecord rec{};
                     rec.m_uuid = hid.m_guid;
@@ -343,7 +375,9 @@ namespace waggle
                     {
                         wax::StringView suffix{absPath.Data() + absPath.Size() - 7, 7};
                         if (suffix == wax::StringView{".hiveid", 7})
+                        {
                             continue;
+                        }
                     }
 
                     // Convert absolute path to VFS relative path
@@ -352,7 +386,9 @@ namespace waggle
                     {
                         size_t prefixLen = m_paths.m_assets.Size();
                         if (absPath[prefixLen] == '/')
+                        {
                             ++prefixLen;
+                        }
                         vfsPath.Append(absPath.Data() + prefixLen, absPath.Size() - prefixLen);
                     }
                     else
@@ -363,13 +399,15 @@ namespace waggle
                     if (change.m_kind == nectar::FileChangeKind::MODIFIED)
                     {
                         auto* record = m_importDb->FindByPath(vfsPath.View());
-                        if (record)
+                        if (record != nullptr)
+                        {
                             toReimport.PushBack(record->m_uuid);
+                        }
                     }
                     else if (change.m_kind == nectar::FileChangeKind::DELETED)
                     {
                         auto* record = m_importDb->FindByPath(vfsPath.View());
-                        if (record)
+                        if (record != nullptr)
                         {
                             m_importDb->GetDependencyGraph().RemoveNode(record->m_uuid);
                             m_cookCache->Invalidate(record->m_uuid);
@@ -380,8 +418,10 @@ namespace waggle
                 // Version check: add assets whose importer version bumped
                 m_importDb->ForEach([&](nectar::AssetId id, const nectar::AssetRecord& rec) {
                     nectar::IAssetImporter* imp = m_importerRegistry->FindByPath(rec.m_path.View());
-                    if (imp && rec.m_importVersion != imp->Version())
+                    if (imp != nullptr && rec.m_importVersion != imp->Version())
+                    {
                         toReimport.PushBack(id);
+                    }
                 });
 
                 if (toReimport.Size() > 0)
@@ -391,7 +431,9 @@ namespace waggle
                                   toReimport.Size());
 
                     for (size_t i = 0; i < toReimport.Size(); ++i)
+                    {
                         m_cookPipeline->InvalidateCascade(toReimport[i]);
+                    }
 
                     nectar::CookRequest cookReq;
                     cookReq.m_assets = static_cast<wax::Vector<nectar::AssetId>&&>(toReimport);
@@ -417,10 +459,14 @@ namespace waggle
     void ProjectManager::Close()
     {
         if (!m_open)
+        {
             return;
+        }
 
         if (m_io)
+        {
             m_io->Shutdown();
+        }
 
         SaveImportCache();
 
@@ -443,7 +489,9 @@ namespace waggle
         m_serviceThread.Stop();
 
         if (m_nativeWatcher && m_watcherStatePath.Size() > 0)
+        {
             m_nativeWatcher->SaveState(m_watcherStatePath.View());
+        }
 
         m_hotReload.Reset();
         m_nativeWatcher.Reset();
@@ -543,7 +591,9 @@ namespace waggle
     void ProjectManager::MountEngineAssets(wax::StringView absoluteDir, wax::StringView vfsPrefix)
     {
         if (!m_vfs || absoluteDir.IsEmpty())
+        {
             return;
+        }
         if (m_engineMount)
         {
             m_vfs->Unmount(vfsPrefix, m_engineMount.Get());
@@ -556,25 +606,35 @@ namespace waggle
     void ProjectManager::SaveImportCache()
     {
         if (m_importDb.IsNull() || !m_open)
+        {
             return;
+        }
 
         if (SaveImportCacheToDisk(m_paths.m_importCache.CStr(), *m_importDb, *m_alloc))
+        {
             hive::LogInfo(LOG_PROJECT, "Import cache saved");
+        }
         else
+        {
             hive::LogWarning(LOG_PROJECT, "Failed to save import cache");
+        }
     }
 
     void ProjectManager::Update()
     {
         if (m_server)
+        {
             m_server->Update();
+        }
 
         if (m_hotReload)
         {
             if (m_offlineChanges.Size() > 0 && m_nativeWatcher)
             {
                 for (size_t i = 0; i < m_offlineChanges.Size(); ++i)
+                {
                     m_nativeWatcher->EnqueueChange(m_offlineChanges[i].m_path.View(), m_offlineChanges[i].m_kind);
+                }
                 m_offlineChanges.Clear();
             }
             m_lastReloadCount = static_cast<uint32_t>(m_hotReload->ProcessChanges(kDefaultPlatform));
@@ -585,22 +645,32 @@ namespace waggle
                 for (size_t i = 0; i < reloaded.Size(); ++i)
                 {
                     auto* record = m_importDb->FindByUuid(reloaded[i]);
-                    if (!record)
+                    if (record == nullptr)
+                    {
                         continue;
+                    }
 
                     const auto* cacheEntry = m_cookCache->Find(reloaded[i], kDefaultPlatform);
-                    if (!cacheEntry)
+                    if (cacheEntry == nullptr)
+                    {
                         continue;
+                    }
 
                     auto cookedBlob = m_cas->Load(cacheEntry->m_cookedHash);
                     if (cookedBlob.Size() == 0)
+                    {
                         continue;
+                    }
 
                     auto blobSpan = cookedBlob.View();
                     if (record->m_type.View().Equals(wax::StringView{"Texture", 7}))
+                    {
                         SwapAsset<nectar::TextureAsset>(*m_server, record->m_path.View(), blobSpan);
+                    }
                     else if (record->m_type.View().Equals(wax::StringView{"Mesh", 4}))
+                    {
                         SwapAsset<nectar::MeshAsset>(*m_server, record->m_path.View(), blobSpan);
+                    }
                     else if (record->m_type.View().Equals(wax::StringView{"Material", 8}))
                     {
                         SwapAsset<nectar::MaterialAsset>(*m_server, record->m_path.View(), blobSpan);
@@ -637,17 +707,23 @@ namespace waggle
     wax::ByteBuffer ProjectManager::ReadCookedBlob(nectar::AssetId id)
     {
         if (!m_cookCache || !m_cas)
+        {
             return wax::ByteBuffer{};
+        }
         const auto* entry = m_cookCache->Find(id, kDefaultPlatform);
-        if (!entry)
+        if (entry == nullptr)
+        {
             return wax::ByteBuffer{};
+        }
         return m_cas->Load(entry->m_cookedHash);
     }
 
     void ProjectManager::ConsumeChangedMaterials(wax::Vector<wax::String>& out)
     {
         for (size_t i = 0; i < m_changedMaterials.Size(); ++i)
+        {
             out.PushBack(static_cast<wax::String&&>(m_changedMaterials[i]));
+        }
         m_changedMaterials.Clear();
     }
 

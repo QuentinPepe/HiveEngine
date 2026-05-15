@@ -64,10 +64,14 @@ namespace nectar
         template <typename T> [[nodiscard]] T* Get(const StrongHandle<T>& handle) const
         {
             if (handle.IsNull())
+            {
                 return GetPlaceholder<T>();
+            }
             auto* storage = FindStorage<T>();
-            if (!storage)
+            if (storage == nullptr)
+            {
                 return nullptr;
+            }
             return storage->GetAssetOrPlaceholder(handle.Raw());
         }
 
@@ -76,10 +80,14 @@ namespace nectar
         template <typename T> [[nodiscard]] AssetStatus GetStatus(const StrongHandle<T>& handle) const
         {
             if (handle.IsNull())
+            {
                 return AssetStatus::NOT_LOADED;
+            }
             auto* storage = FindStorage<T>();
-            if (!storage)
+            if (storage == nullptr)
+            {
                 return AssetStatus::NOT_LOADED;
+            }
             return storage->GetStatus(handle.Raw().m_index);
         }
 
@@ -91,10 +99,14 @@ namespace nectar
         template <typename T> const AssetErrorInfo* GetError(const StrongHandle<T>& handle) const
         {
             if (handle.IsNull())
+            {
                 return nullptr;
+            }
             auto* storage = FindStorage<T>();
-            if (!storage)
+            if (storage == nullptr)
+            {
                 return nullptr;
+            }
             return storage->GetError(handle.Raw().m_index);
         }
 
@@ -115,10 +127,14 @@ namespace nectar
         template <typename T> StrongHandle<T> Lock(const WeakHandle<T>& weak)
         {
             if (weak.IsNull())
+            {
                 return StrongHandle<T>{};
+            }
             auto* storage = FindStorage<T>();
-            if (!storage)
+            if (storage == nullptr)
+            {
                 return StrongHandle<T>{};
+            }
             if (!storage->IsHandleValid(weak.m_raw.m_index, weak.m_raw.m_generation))
             {
                 return StrongHandle<T>{};
@@ -132,7 +148,7 @@ namespace nectar
         template <typename T> void IncrementRef(wax::Handle<T> handle)
         {
             auto* storage = FindStorage<T>();
-            if (storage && storage->IsHandleValid(handle.m_index, handle.m_generation))
+            if (storage != nullptr && storage->IsHandleValid(handle.m_index, handle.m_generation))
             {
                 storage->IncrementRef(handle.m_index);
             }
@@ -141,7 +157,7 @@ namespace nectar
         template <typename T> void DecrementRef(wax::Handle<T> handle)
         {
             auto* storage = FindStorage<T>();
-            if (storage && storage->IsHandleValid(handle.m_index, handle.m_generation))
+            if (storage != nullptr && storage->IsHandleValid(handle.m_index, handle.m_generation))
             {
                 storage->DecrementRef(handle.m_index);
             }
@@ -157,8 +173,10 @@ namespace nectar
         template <typename T> bool PollEvents(AssetEvent<T>& out)
         {
             auto* storage = FindStorage<T>();
-            if (!storage)
+            if (storage == nullptr)
+            {
                 return false;
+            }
             return storage->DrainEvents(&out, 1) > 0;
         }
 
@@ -176,10 +194,14 @@ namespace nectar
         template <typename T> void SetPersistent(const StrongHandle<T>& handle, bool persistent)
         {
             if (handle.IsNull())
+            {
                 return;
+            }
             auto* storage = FindStorage<T>();
-            if (storage)
+            if (storage != nullptr)
+            {
                 storage->SetPersistent(handle.Raw().m_index, persistent);
+            }
         }
 
         // -- Budget --
@@ -187,14 +209,16 @@ namespace nectar
         template <typename T> void SetBudget(size_t bytes)
         {
             auto* storage = FindStorage<T>();
-            if (storage)
+            if (storage != nullptr)
+            {
                 storage->SetBudget(bytes);
+            }
         }
 
         template <typename T> [[nodiscard]] size_t GetBytesUsed() const
         {
             auto* storage = FindStorage<T>();
-            return storage ? storage->BytesUsed() : 0;
+            return storage != nullptr ? storage->BytesUsed() : 0;
         }
 
         // -- Hot reload --
@@ -206,11 +230,15 @@ namespace nectar
             PathKey key{tid, wax::String{*m_allocator}};
             key.m_path.Append(path.Data(), path.Size());
             auto* cached = m_pathCache.Find(key);
-            if (!cached)
+            if (cached == nullptr)
+            {
                 return wax::Handle<T>::Invalid();
+            }
             auto* storage = FindStorage<T>();
-            if (!storage || !storage->IsHandleValid(cached->m_index, cached->m_generation))
+            if (storage == nullptr || !storage->IsHandleValid(cached->m_index, cached->m_generation))
+            {
                 return wax::Handle<T>::Invalid();
+            }
             return wax::Handle<T>{cached->m_index, cached->m_generation};
         }
 
@@ -218,8 +246,10 @@ namespace nectar
         {
             HIVE_PROFILE_SCOPE_N("AssetServer::Reload");
             auto* storage = FindStorage<T>();
-            if (!storage)
+            if (storage == nullptr)
+            {
                 return false;
+            }
             return storage->ReloadAsset(handle, newData);
         }
 
@@ -231,7 +261,7 @@ namespace nectar
         template <typename T> [[nodiscard]] T* GetPlaceholder() const
         {
             auto* storage = FindStorage<T>();
-            return storage ? storage->GetPlaceholder() : nullptr;
+            return storage != nullptr ? storage->GetPlaceholder() : nullptr;
         }
 
         /// Sync file read (fallback without VFS)
@@ -297,7 +327,7 @@ namespace nectar
     {
         nectar::TypeId tid = nectar::TypeIdOf<T>();
         auto* existing = m_storages.Find(tid);
-        if (existing)
+        if (existing != nullptr)
         {
             return *static_cast<AssetStorageFor<T>*>(*existing);
         }
@@ -311,8 +341,10 @@ namespace nectar
     {
         nectar::TypeId tid = nectar::TypeIdOf<T>();
         auto* found = m_storages.Find(tid);
-        if (!found)
+        if (found == nullptr)
+        {
             return nullptr;
+        }
         return static_cast<AssetStorageFor<T>*>(*found);
     }
 
@@ -326,7 +358,7 @@ namespace nectar
         key.m_path.Append(path.Data(), path.Size());
 
         auto* cached = m_pathCache.Find(key);
-        if (cached)
+        if (cached != nullptr)
         {
             wax::Handle<T> existing{cached->m_index, cached->m_generation};
             if (storage.IsHandleValid(existing.m_index, existing.m_generation))
@@ -337,11 +369,13 @@ namespace nectar
             // Stale entry — will be overwritten below
         }
 
-        if (!storage.GetLoader())
+        if (storage.GetLoader() == nullptr)
         {
             auto handle = storage.AllocateSlot();
             if (handle.IsNull())
+            {
                 return StrongHandle<T>{};
+            }
             storage.SetStatus(handle.m_index, AssetStatus::FAILED);
             storage.SetError(handle.m_index, AssetErrorInfo{AssetError::NO_LOADER, wax::String{}});
             storage.IncrementRef(handle.m_index);
@@ -351,10 +385,12 @@ namespace nectar
 
         auto handle = storage.AllocateSlot();
         if (handle.IsNull())
+        {
             return StrongHandle<T>{};
+        }
 
         // Async path via VFS + IOScheduler
-        if (m_io)
+        if (m_io != nullptr)
         {
             storage.SetStatus(handle.m_index, AssetStatus::QUEUED);
             storage.IncrementRef(handle.m_index);
@@ -377,7 +413,7 @@ namespace nectar
         }
 
         T* asset = storage.GetLoader()->Load(buffer.View(), *m_allocator);
-        if (!asset)
+        if (asset == nullptr)
         {
             storage.SetStatus(handle.m_index, AssetStatus::FAILED);
             storage.SetError(handle.m_index, AssetErrorInfo{AssetError::LOAD_FAILED, wax::String{}});
@@ -403,7 +439,7 @@ namespace nectar
         key.m_path.Append(name.Data(), name.Size());
 
         auto* cached = m_pathCache.Find(key);
-        if (cached)
+        if (cached != nullptr)
         {
             wax::Handle<T> existing{cached->m_index, cached->m_generation};
             if (storage.IsHandleValid(existing.m_index, existing.m_generation))
@@ -413,11 +449,13 @@ namespace nectar
             }
         }
 
-        if (!storage.GetLoader())
+        if (storage.GetLoader() == nullptr)
         {
             auto handle = storage.AllocateSlot();
             if (handle.IsNull())
+            {
                 return StrongHandle<T>{};
+            }
             storage.SetStatus(handle.m_index, AssetStatus::FAILED);
             storage.SetError(handle.m_index, AssetErrorInfo{AssetError::NO_LOADER, wax::String{}});
             storage.IncrementRef(handle.m_index);
@@ -427,12 +465,14 @@ namespace nectar
 
         auto handle = storage.AllocateSlot();
         if (handle.IsNull())
+        {
             return StrongHandle<T>{};
+        }
 
         storage.SetStatus(handle.m_index, AssetStatus::LOADING);
 
         T* asset = storage.GetLoader()->Load(data, *m_allocator);
-        if (!asset)
+        if (asset == nullptr)
         {
             storage.SetStatus(handle.m_index, AssetStatus::FAILED);
             storage.SetError(handle.m_index, AssetErrorInfo{AssetError::LOAD_FAILED, wax::String{}});

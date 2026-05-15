@@ -170,35 +170,9 @@ namespace queen
         }
     } // namespace detail
 
-    /**
-     * Query result for iterating over matching entities
-     *
-     * Provides iteration over all entities that match a query's terms.
-     * Components are accessed through the callback in Each().
-     *
-     * Memory layout:
-     * ┌──────────────────────────────────────────────────────────────┐
-     * │ archetypes_: Vector<Archetype*> (matching archetypes)        │
-     * │ descriptor_: QueryDescriptor (term definitions)              │
-     * └──────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Each: O(n) where n = total matching entities across archetypes
-     * - Iteration is cache-friendly within each archetype
-     *
-     * Limitations:
-     * - Not thread-safe
-     * - Cannot modify component set while iterating
-     *
-     * Example:
-     * @code
-     *   Query<Read<Position>, Write<Velocity>, Without<Dead>> query{alloc, index};
-     *
-     *   query.Each([](const Position& pos, Velocity& vel) {
-     *       vel.dx += pos.x * 0.1f;
-     *   });
-     * @endcode
-     */
+    // Precomputed iterator over archetypes matching a compile-time term list. Built once at
+    // construction so subsequent Each() calls avoid re-running archetype matching. Structural
+    // mutations during iteration are forbidden; use Commands for deferred changes.
     template <comb::Allocator Allocator, typename... Terms> class Query
     {
         using DataTerms = typename detail::FilterDataTerms<Terms...>::Type;
@@ -227,12 +201,7 @@ namespace queen
         Query(Query&&) = default;
         Query& operator=(Query&&) = default;
 
-        /**
-         * Set the last_run_tick for change detection filtering
-         *
-         * When set, queries with Added<T>/Changed<T> filters will only
-         * iterate entities where the component ticks match the filter.
-         */
+        // Sets the reference tick used by Added<T>/Changed<T> filters; required for change detection.
         void SetLastRunTick(Tick tick) noexcept
         {
             m_lastRunTick = tick;

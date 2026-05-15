@@ -12,56 +12,12 @@
 
 namespace queen
 {
-    /**
-     * Thread-local command buffer collection for deferred mutations
-     *
-     * Commands provides per-thread CommandBuffers for safe structural mutations
-     * during parallel system execution. Each thread gets its own buffer to avoid
-     * contention. All buffers are flushed atomically at sync points.
-     *
-     * Memory layout:
-     * ┌──────────────────────────────────────────────────────────────────┐
-     * │ allocator_: Allocator& (shared allocator for all buffers)        │
-     * │ thread_buffers_: Vector<ThreadBuffer> (one per active thread)    │
-     * │ buffer_count_: size_t (number of buffers in use)                 │
-     * └──────────────────────────────────────────────────────────────────┘
-     *
-     * ThreadBuffer structure:
-     * ┌──────────────────────────────────────────────────────────────────┐
-     * │ thread_id: std::thread::id                                       │
-     * │ buffer: CommandBuffer<Allocator>                                 │
-     * └──────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Get(): O(n) where n = active threads (linear search, cached)
-     * - FlushAll(): O(c) where c = total commands across all buffers
-     * - Thread-safe: Yes (each thread has its own buffer)
-     *
-     * Use cases:
-     * - Deferred spawn/despawn during query iteration
-     * - Parallel system structural mutations
-     * - Avoiding iterator invalidation during Each()
-     *
-     * Limitations:
-     * - FlushAll must be called from single thread (not parallel)
-     * - Thread registration is not thread-safe (call Get from same threads consistently)
-     * - Maximum number of threads is limited by initial capacity
-     *
-     * Example:
-     * @code
-     *   // In a system
-     *   world.System<Read<Health>>("DeathCheck")
-     *       .WithCommands()
-     *       .EachWithCommands([](Entity e, const Health& hp, Commands<Allocator>& cmd) {
-     *           if (hp.value <= 0) {
-     *               cmd.Get().Despawn(e);  // Deferred
-     *           }
-     *       });
-     *
-     *   // Scheduler automatically flushes at sync point
-     *   world.Update();  // Commands applied after all systems run
-     * @endcode
-     */
+    // Per-worker command-buffer pool used to defer structural mutations during parallel
+    // system execution. Each worker writes into its own slot to avoid contention, and
+    // FlushAll() applies them in deterministic slot order from the main thread.
+    //
+    // Slot 0 is reserved for the main thread; slots 1..N map to worker indices reported by
+    // drone::WorkerContext, giving O(1) dispatch instead of a thread-id lookup.
     template <comb::Allocator Allocator> class Commands
     {
     public:
@@ -85,14 +41,8 @@ namespace queen
         Commands(Commands&&) = default;
         Commands& operator=(Commands&&) = default;
 
-        /**
-         * Get the command buffer for the current thread
-         *
-         * Uses WorkerContext index for O(1) lookup. Slot 0 is reserved for
-         * the main thread, slots 1..N for worker threads.
-         *
-         * @return Reference to per-thread CommandBuffer
-         */
+        // Returns the command buffer assigned to the calling worker (or slot 0 from the
+        // main thread). Indexing through WorkerContext keeps this allocation-free and lock-free.
         [[nodiscard]] CommandBuffer<Allocator>& Get()
         {
             return m_buffers[SlotIndex()];
@@ -103,14 +53,8 @@ namespace queen
             return m_buffers[SlotIndex()];
         }
 
-        /**
-         * Flush all thread-local command buffers to the World
-         *
-         * Must be called from a single thread (not during parallel execution).
-         * Buffers are applied in deterministic order (by thread index).
-         *
-         * @param world The World to apply commands to
-         */
+        // Applies every worker's queued commands to the World. Must run on a single thread
+        // outside parallel execution; iteration order is deterministic for replay stability.
         void FlushAll(World& world)
         {
             for (size_t i = 0; i < m_buffers.Size(); ++i)

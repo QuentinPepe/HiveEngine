@@ -32,7 +32,7 @@ namespace nectar
         output.m_dependencies = wax::Vector<DependencyEdge>{*m_alloc};
 
         IAssetImporter* importer = m_registry->FindByPath(request.m_sourcePath);
-        if (!importer)
+        if (importer == nullptr)
         {
             output.m_errorMessage.Append("No importer for path: ");
             output.m_errorMessage.Append(request.m_sourcePath.Data(), request.m_sourcePath.Size());
@@ -65,7 +65,7 @@ namespace nectar
         }
 
         auto* existing = m_db->FindByUuid(request.m_assetId);
-        if (existing)
+        if (existing != nullptr)
         {
             existing->m_contentHash = sourceHash;
             existing->m_intermediateHash = stored;
@@ -122,7 +122,7 @@ namespace nectar
         for (size_t i = 0; i < assets.Size(); ++i)
         {
             auto* record = m_db->FindByUuid(assets[i]);
-            if (!record)
+            if (record == nullptr)
             {
                 continue;
             }
@@ -142,13 +142,13 @@ namespace nectar
     bool ImportPipeline::NeedsReimport(AssetId id) const
     {
         auto* record = m_db->FindByUuid(id);
-        if (!record)
+        if (record == nullptr)
         {
             return true;
         }
 
         IAssetImporter* importer = m_registry->FindByPath(record->m_path.View());
-        if (!importer)
+        if (importer == nullptr)
         {
             return false;
         }

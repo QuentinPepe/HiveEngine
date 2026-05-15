@@ -17,46 +17,9 @@ namespace queen
 
     template <comb::Allocator Allocator> class SystemStorage;
 
-    /**
-     * Builder for registering systems with the World
-     *
-     * SystemBuilder provides a fluent API for defining systems with their
-     * queries, resource access, and execution callbacks. The builder
-     * automatically extracts the access pattern from the query terms.
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ world_: World* (reference to parent world)                      │
-     * │ storage_: SystemStorage* (where system is registered)           │
-     * │ descriptor_: SystemDescriptor* (system being built)             │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Building: O(n) where n = query terms
-     * - each() registration: O(1)
-     * - run() registration: O(1)
-     *
-     * Use cases:
-     * - Entity iteration systems (query-based)
-     * - Resource-only systems
-     * - Exclusive world access systems
-     *
-     * Example:
-     * @code
-     *   // Entity system with query
-     *   world.system<Read<Position>, Write<Velocity>>("Movement")
-     *       .each([](const Position& pos, Velocity& vel) {
-     *           vel.dx += pos.x * 0.1f;
-     *       });
-     *
-     *   // Resource-only system
-     *   world.system("UpdateTime")
-     *       .with_resource<Time>()
-     *       .run([](Time& time) {
-     *           time.elapsed += 0.016f;
-     *       });
-     * @endcode
-     */
+    // Fluent builder returned by World::System. The Terms pack lets the builder
+    // derive component access automatically; resources/exclusivity must be
+    // declared explicitly so the scheduler has complete conflict information.
     template <comb::Allocator Allocator, typename... Terms> class SystemBuilder
     {
     public:
@@ -70,22 +33,14 @@ namespace queen
             InitializeFromTerms();
         }
 
-        /**
-         * Declare that this system must run after another system
-         *
-         * @param id SystemId of the system to run after
-         */
         SystemBuilder& After(SystemId id)
         {
             m_descriptor->AddAfter(id);
             return *this;
         }
 
-        /**
-         * Declare that this system must run after another system (by name)
-         *
-         * @param name Name of the system to run after (must already be registered)
-         */
+        // Name-based overload asserts: the target must already be registered
+        // because we resolve the SystemId eagerly here.
         SystemBuilder& After(const char* name)
         {
             auto* other = m_storage->GetSystemByName(name);
@@ -94,22 +49,12 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Declare that this system must run before another system
-         *
-         * @param id SystemId of the system to run before
-         */
         SystemBuilder& Before(SystemId id)
         {
             m_descriptor->AddBefore(id);
             return *this;
         }
 
-        /**
-         * Declare that this system must run before another system (by name)
-         *
-         * @param name Name of the system to run before (must already be registered)
-         */
         SystemBuilder& Before(const char* name)
         {
             auto* other = m_storage->GetSystemByName(name);
@@ -118,87 +63,36 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Mark system as exclusive (requires exclusive world access)
-         */
+        // Forces serial execution; the scheduler will not run any other system
+        // concurrently with an exclusive one.
         SystemBuilder& Exclusive()
         {
             m_descriptor->SetExecutorMode(SystemExecutor::EXCLUSIVE);
             return *this;
         }
 
-        /**
-         * Add read access to a resource
-         */
         template <typename T> SystemBuilder& WithResource()
         {
             m_descriptor->Access().template AddResourceRead<T>();
             return *this;
         }
 
-        /**
-         * Add write access to a resource
-         */
         template <typename T> SystemBuilder& WithResourceMut()
         {
             m_descriptor->Access().template AddResourceWrite<T>();
             return *this;
         }
 
-        /**
-         * Register an entity iteration callback
-         *
-         * The callback receives component references matching the query terms.
-         * It is called once for each entity matching the query.
-         *
-         * @tparam F Lambda type
-         * @param func The callback function
-         * @return SystemId for the registered system
-         */
         template <typename F> SystemId Each(F&& func); // Implementation in system_builder_impl.h
 
-        /**
-         * Register an entity iteration callback that also receives the Entity
-         *
-         * @tparam F Lambda type
-         * @param func The callback function
-         * @return SystemId for the registered system
-         */
         template <typename F> SystemId EachWithEntity(F&& func); // Implementation in system_builder_impl.h
 
-        /**
-         * Register an entity iteration callback with Commands access
-         *
-         * The callback receives the Entity, component references, and a reference
-         * to the World's Commands collection for deferred mutations.
-         *
-         * @tparam F Lambda type (Entity, Components..., Commands<Allocator>&)
-         * @param func The callback function
-         * @return SystemId for the registered system
-         *
-         * Example:
-         * @code
-         *   world.System<Read<Health>>("DeathCheck")
-         *       .EachWithCommands([](Entity e, const Health& hp, Commands<Allocator>& cmd) {
-         *           if (hp.value <= 0) {
-         *               cmd.Get().Despawn(e);
-         *           }
-         *       });
-         * @endcode
-         */
+        // Per-entity callback that also receives the World's Commands collection
+        // so handlers can queue deferred mutations without breaking iteration.
         template <typename F> SystemId EachWithCommands(F&& func); // Implementation in system_builder_impl.h
 
-        /**
-         * Register a resource-only callback (no entity iteration)
-         *
-         * For systems that only access resources and don't iterate entities.
-         * This requires explicit resource access declaration via
-         * WithResource/WithResourceMut.
-         *
-         * @tparam F Lambda type
-         * @param func The callback function
-         * @return SystemId for the registered system
-         */
+        // Resource-only execution path. Caller must have declared resource access
+        // via WithResource/WithResourceMut for the scheduler to honor it.
         template <typename F> SystemId Run(F&& func)
         {
             using FuncType = std::decay_t<F>;
@@ -220,49 +114,12 @@ namespace queen
             return m_descriptor->Id();
         }
 
-        /**
-         * Register an entity iteration callback with a single Res<T> parameter
-         *
-         * The callback receives the Entity, component references, and a Res<T>.
-         *
-         * @tparam R Resource type (wrapped in Res<R>)
-         * @tparam F Lambda type
-         * @param func The callback function (Entity, Components..., Res<R>)
-         * @return SystemId for the registered system
-         *
-         * Example:
-         * @code
-         *   world.System<Read<Position>>("Reader")
-         *       .EachWithRes<Time>([](Entity e, const Position& pos, Res<Time> time) {
-         *           // Use time->delta
-         *       });
-         * @endcode
-         */
+        // Implicitly registers read access on R so the scheduler sees the resource dep.
         template <typename R, typename F> SystemId EachWithRes(F&& func); // Implementation in system_builder_impl.h
 
-        /**
-         * Register an entity iteration callback with a single ResMut<T> parameter
-         *
-         * The callback receives the Entity, component references, and a ResMut<T>.
-         *
-         * @tparam R Resource type (wrapped in ResMut<R>)
-         * @tparam F Lambda type
-         * @param func The callback function (Entity, Components..., ResMut<R>)
-         * @return SystemId for the registered system
-         *
-         * Example:
-         * @code
-         *   world.System<Read<Position>>("Writer")
-         *       .EachWithResMut<Time>([](Entity e, const Position& pos, ResMut<Time> time) {
-         *           time->elapsed += time->delta;
-         *       });
-         * @endcode
-         */
+        // Implicitly registers write access on R so the scheduler sees the resource dep.
         template <typename R, typename F> SystemId EachWithResMut(F&& func); // Implementation in system_builder_impl.h
 
-        /**
-         * Get the system ID (for ordering constraints)
-         */
         [[nodiscard]] SystemId Id() const noexcept
         {
             return m_descriptor->Id();
@@ -301,9 +158,8 @@ namespace queen
         SystemDescriptor<Allocator>* m_descriptor;
     };
 
-    /**
-     * Specialization for no query terms (resource-only systems)
-     */
+    // Empty-Terms specialization: no query, so resource access must be declared
+    // manually via WithResource/WithResourceMut.
     template <comb::Allocator Allocator> class SystemBuilder<Allocator>
     {
     public:
@@ -383,40 +239,10 @@ namespace queen
             return m_descriptor->Id();
         }
 
-        /**
-         * Register a resource-only callback with Res<T> parameter
-         *
-         * @tparam R Resource type
-         * @tparam F Lambda type taking Res<R>
-         * @param func The callback function
-         * @return SystemId for the registered system
-         *
-         * Example:
-         * @code
-         *   world.System("ReadTime")
-         *       .RunWithRes<Time>([](Res<Time> time) {
-         *           // Use time->delta
-         *       });
-         * @endcode
-         */
+        // Implicitly registers read access on R so the scheduler sees the resource dep.
         template <typename R, typename F> SystemId RunWithRes(F&& func); // Implementation in system_builder_impl.h
 
-        /**
-         * Register a resource-only callback with ResMut<T> parameter
-         *
-         * @tparam R Resource type
-         * @tparam F Lambda type taking ResMut<R>
-         * @param func The callback function
-         * @return SystemId for the registered system
-         *
-         * Example:
-         * @code
-         *   world.System("UpdateTime")
-         *       .RunWithResMut<Time>([](ResMut<Time> time) {
-         *           time->elapsed += time->delta;
-         *       });
-         * @endcode
-         */
+        // Implicitly registers write access on R so the scheduler sees the resource dep.
         template <typename R, typename F> SystemId RunWithResMut(F&& func); // Implementation in system_builder_impl.h
 
         [[nodiscard]] SystemId Id() const noexcept

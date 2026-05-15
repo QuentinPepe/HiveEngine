@@ -45,6 +45,7 @@ add_executable(hive_launcher
     src/launcher/gltf_import_job.cpp
     src/launcher/launcher_platform.cpp
     src/launcher/launcher_scene.cpp
+    src/launcher/launcher_scene_common.cpp
     src/launcher/launcher_project.cpp
 )
 

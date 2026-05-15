@@ -297,14 +297,13 @@ namespace drone
         {
             auto* deque = m_workers[workerIdx].m_deque;
 
-            // 1. Local deque (LIFO — cache hot)
+            // Local deque first (LIFO — cache hot), then global queues, then steal from a random victim.
             if (auto local = deque->Pop())
             {
                 ExecuteJob(local.value());
                 return true;
             }
 
-            // 2. Global queues by priority
             for (size_t p = 0; p < static_cast<size_t>(Priority::COUNT); ++p)
             {
                 if (auto global = m_globalQueues[p]->Pop())
@@ -314,7 +313,6 @@ namespace drone
                 }
             }
 
-            // 3. Steal from random victim
             uint32_t start = XorShift32(m_workers[workerIdx].m_rngState) % static_cast<uint32_t>(m_workerCount);
             for (size_t i = 0; i < m_workerCount; ++i)
             {

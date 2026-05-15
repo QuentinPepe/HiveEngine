@@ -20,20 +20,20 @@ namespace hive
         const char* lastSlash = std::strrchr(file, '/');
         const char* lastBackslash = std::strrchr(file, '\\');
 
-        if (lastSlash && lastBackslash)
+        if (lastSlash != nullptr && lastBackslash != nullptr)
         {
             filename = (lastSlash > lastBackslash) ? lastSlash + 1 : lastBackslash + 1;
         }
-        else if (lastSlash)
+        else if (lastSlash != nullptr)
         {
             filename = lastSlash + 1;
         }
-        else if (lastBackslash)
+        else if (lastBackslash != nullptr)
         {
             filename = lastBackslash + 1;
         }
 
-        if (message && message[0] != '\0')
+        if (message != nullptr && message[0] != '\0')
         {
             std::snprintf(g_sAssertMessageBuffer, sizeof(g_sAssertMessageBuffer),
                           "Assertion failed\n"

@@ -13,13 +13,17 @@ namespace nectar
     bool AssetDatabase::Insert(AssetRecord record)
     {
         if (m_records.Contains(record.m_uuid))
+        {
             return false;
+        }
 
         if (!record.m_path.IsEmpty())
         {
             wax::String pathKey{*m_alloc, record.m_path.View()};
             if (m_pathIndex.Contains(pathKey))
+            {
                 return false;
+            }
 
             AssetId uuid = record.m_uuid;
             m_pathIndex.Insert(static_cast<wax::String&&>(pathKey), uuid);
@@ -33,8 +37,10 @@ namespace nectar
     bool AssetDatabase::Remove(AssetId uuid)
     {
         auto* record = m_records.Find(uuid);
-        if (!record)
+        if (record == nullptr)
+        {
             return false;
+        }
 
         // Remove path index
         if (!record->m_path.IsEmpty())
@@ -53,8 +59,10 @@ namespace nectar
     bool AssetDatabase::Update(AssetId uuid, AssetRecord record)
     {
         auto* existing = m_records.Find(uuid);
-        if (!existing)
+        if (existing == nullptr)
+        {
             return false;
+        }
 
         if (!existing->m_path.View().Equals(record.m_path.View()))
         {
@@ -67,7 +75,9 @@ namespace nectar
             {
                 wax::String newKey{*m_alloc, record.m_path.View()};
                 if (m_pathIndex.Contains(newKey))
+                {
                     return false;
+                }
 
                 m_pathIndex.Insert(static_cast<wax::String&&>(newKey), uuid);
             }
@@ -91,8 +101,10 @@ namespace nectar
     {
         wax::String key{*m_alloc, path};
         auto* uuid = m_pathIndex.Find(key);
-        if (!uuid)
+        if (uuid == nullptr)
+        {
             return nullptr;
+        }
 
         return m_records.Find(*uuid);
     }
@@ -101,8 +113,10 @@ namespace nectar
     {
         wax::String key{*m_alloc, path};
         auto* uuid = m_pathIndex.Find(key);
-        if (!uuid)
+        if (uuid == nullptr)
+        {
             return nullptr;
+        }
 
         return m_records.Find(*uuid);
     }
@@ -112,7 +126,9 @@ namespace nectar
         for (auto it = m_records.Begin(); it != m_records.End(); ++it)
         {
             if (it.Value().m_type.View().Equals(type))
+            {
                 out.PushBack(&it.Value());
+            }
         }
     }
 

@@ -1,10 +1,3 @@
-/**
- * Platform Utilities Implementation
- *
- * Platform-specific implementations for memory debugging utilities.
- * Only compiled when COMB_MEM_DEBUG=1.
- */
-
 #include <comb/debug/platform_utils.h>
 
 #if COMB_MEM_DEBUG && COMB_MEM_DEBUG_CALLSTACKS
@@ -16,15 +9,6 @@
 namespace comb::debug
 {
 
-    /**
-     * Print callstack to log (platform-specific symbolication)
-     *
-     * Resolves addresses to function names and prints to hive::Log.
-     *
-     * Requirements:
-     * - Windows: dbghelp.lib linked, symbols available (.pdb)
-     * - Linux/macOS: Compile with -rdynamic for symbol resolution
-     */
     void PrintCallstack(void* const* frames, uint32_t depth)
     {
         if (depth == 0 || frames == nullptr)

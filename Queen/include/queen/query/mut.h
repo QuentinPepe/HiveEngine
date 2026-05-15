@@ -6,40 +6,9 @@
 
 namespace queen
 {
-    /**
-     * Mutable component reference with automatic change tracking
-     *
-     * Mut<T> wraps a mutable reference to a component and automatically marks
-     * it as changed when accessed through operator-> or operator*.
-     * This enables efficient change detection: only components that were
-     * actually accessed are marked as changed.
-     *
-     * The change marking happens when:
-     * - operator->() is called (accessing members)
-     * - operator*() is called (dereferencing)
-     * - Get() is called
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ m_ptr: T* - pointer to component data                            │
-     * │ m_ticks: ComponentTicks* - pointer to component's ticks          │
-     * │ m_currentTick: Tick - world's current tick for marking          │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Access: O(1) with minimal overhead (tick assignment on access)
-     * - Change marking is deferred until actual access
-     *
-     * Example:
-     * @code
-     *   world.Query<Mut<Position>>().Each([](Mut<Position> pos) {
-     *       if (some_condition) {
-     *           pos->x += 1.0f;  // Automatically marks as changed
-     *       }
-     *       // If we don't access pos, it's not marked as changed
-     *   });
-     * @endcode
-     */
+    // Mutable component handle that defers change-tick marking until the value is actually
+    // touched through the mutating accessors. Avoids marking unread components dirty so
+    // Changed<T> filters stay precise. GetReadOnly() bypasses marking for read-after-write.
     template <typename T> class Mut
     {
     public:
@@ -59,10 +28,7 @@ namespace queen
         {
         }
 
-        /**
-         * Access component through arrow operator
-         * Marks the component as changed at current_tick
-         */
+        // Mutating accessor: stamps the current tick before returning the pointer.
         [[nodiscard]] T* operator->() noexcept
         {
             MarkChanged();
@@ -74,10 +40,7 @@ namespace queen
             return m_ptr;
         }
 
-        /**
-         * Dereference to get component reference
-         * Marks the component as changed at current_tick
-         */
+        // Mutating dereference: stamps the current tick before returning the reference.
         [[nodiscard]] T& operator*() noexcept
         {
             MarkChanged();
@@ -89,44 +52,30 @@ namespace queen
             return *m_ptr;
         }
 
-        /**
-         * Get raw pointer (marks as changed)
-         */
+        // Returns the raw pointer and marks the component changed.
         [[nodiscard]] T* Get() noexcept
         {
             MarkChanged();
             return m_ptr;
         }
 
-        /**
-         * Get raw pointer (read-only, does not mark as changed)
-         */
         [[nodiscard]] const T* Get() const noexcept
         {
             return m_ptr;
         }
 
-        /**
-         * Get raw pointer without marking as changed
-         * Use when you need to read without triggering change detection
-         */
+        // Escape hatch for reading without triggering change detection.
         [[nodiscard]] const T* GetReadOnly() const noexcept
         {
             return m_ptr;
         }
 
-        /**
-         * Check if the wrapper holds a valid pointer
-         */
         [[nodiscard]] constexpr explicit operator bool() const noexcept
         {
             return m_ptr != nullptr;
         }
 
-        /**
-         * Explicitly mark as changed
-         * Useful when you modify through a copied reference
-         */
+        // Manual override when the mutation happens through an aliased pointer/reference.
         void MarkChanged() noexcept
         {
             if (m_ticks != nullptr)
@@ -135,25 +84,16 @@ namespace queen
             }
         }
 
-        /**
-         * Check if this component was added since last_run
-         */
         [[nodiscard]] bool WasAdded(Tick last_run) const noexcept
         {
             return m_ticks != nullptr && m_ticks->WasAdded(last_run);
         }
 
-        /**
-         * Check if this component was changed since last_run
-         */
         [[nodiscard]] bool WasChanged(Tick last_run) const noexcept
         {
             return m_ticks != nullptr && m_ticks->WasChanged(last_run);
         }
 
-        /**
-         * Get the component's ticks (for advanced use)
-         */
         [[nodiscard]] const ComponentTicks* Ticks() const noexcept
         {
             return m_ticks;

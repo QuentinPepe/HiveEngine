@@ -37,11 +37,13 @@ namespace hive
         Unload();
         dlerror();
         m_handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-        if (!m_handle)
+        if (m_handle == nullptr)
         {
             const char* err = dlerror();
-            if (err)
+            if (err != nullptr)
+            {
                 std::strncpy(m_errorBuf, err, kErrorBufSize - 1);
+            }
             m_errorBuf[kErrorBufSize - 1] = '\0';
             return false;
         }
@@ -51,7 +53,7 @@ namespace hive
 
     void DynamicLibrary::Unload()
     {
-        if (m_handle)
+        if (m_handle != nullptr)
         {
             dlclose(m_handle);
             m_handle = nullptr;
@@ -60,15 +62,19 @@ namespace hive
 
     void* DynamicLibrary::GetSymbol(const char* name) const
     {
-        if (!m_handle)
+        if (m_handle == nullptr)
+        {
             return nullptr;
+        }
         dlerror();
         void* sym = dlsym(m_handle, name);
-        if (!sym)
+        if (sym == nullptr)
         {
             const char* err = dlerror();
-            if (err)
+            if (err != nullptr)
+            {
                 std::strncpy(m_errorBuf, err, kErrorBufSize - 1);
+            }
             m_errorBuf[kErrorBufSize - 1] = '\0';
         }
         return sym;

@@ -11,58 +11,19 @@
 
 namespace queen
 {
-    /**
-     * Sparse set for entity-to-data mapping
-     *
-     * Provides O(1) insert, remove, lookup, and contains with dense iteration.
-     * Uses a sparse array (indexed by entity) pointing to a dense array.
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────┐
-     * │ Sparse Array (indexed by Entity.Index()):                   │
-     * │ [_, 0, _, 2, 1, _, ...]  → index into dense array           │
-     * │                                                             │
-     * │ Dense Array (packed entities):                              │
-     * │ [e2, e5, e4]  → actual Entity values                        │
-     * │                                                             │
-     * │ Data Array (parallel to dense):                             │
-     * │ [t2, t5, t4]  → component data                              │
-     * └─────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Insert: O(1) amortized
-     * - Remove: O(1) (swap-and-pop)
-     * - Contains: O(1)
-     * - Get: O(1)
-     * - Iteration: O(n) where n = count (dense)
-     * - Memory: O(max_entity_index) + O(n)
-     *
-     * Limitations:
-     * - Sparse array grows with max entity index
-     * - Not thread-safe
-     * - Data order not preserved after remove
-     *
-     * Use cases:
-     * - Component storage for volatile components
-     * - Entity sets for queries
-     * - Relationship storage
-     *
-     * Example:
-     * @code
-     *   comb::LinearAllocator alloc{1_MB};
-     *   queen::SparseSet<Position, comb::LinearAllocator> positions{alloc, 1000, 100};
-     *
-     *   Entity e = ...;
-     *   positions.Insert(e, Position{1, 2, 3});
-     *
-     *   if (positions.Contains(e)) {
-     *       Position& pos = positions.Get(e);
-     *       pos.x += 1.0f;
-     *   }
-     *
-     *   positions.Remove(e);
-     * @endcode
-     */
+    // Entity -> T mapping with O(1) insert/remove/lookup and dense iteration. Remove uses
+    // swap-and-pop, so iteration order is not stable across mutations.
+    // Memory layout:
+    // ┌─────────────────────────────────────────────────────────────┐
+    // │ Sparse Array (indexed by Entity.Index()):                   │
+    // │   [_, 0, _, 2, 1, _, ...]  → index into dense or kInvalid   │
+    // │                                                             │
+    // │ Dense Array (packed entities):                              │
+    // │   [e2, e5, e4]  → actual Entity values                      │
+    // │                                                             │
+    // │ Data Array (parallel to dense):                             │
+    // │   [t2, t5, t4]  → T values                                  │
+    // └─────────────────────────────────────────────────────────────┘
     template <typename T, comb::Allocator Allocator> class SparseSet
     {
     public:

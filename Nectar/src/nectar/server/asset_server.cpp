@@ -107,15 +107,19 @@ namespace nectar
             for (auto it = m_pathCache.Begin(); it != m_pathCache.End(); ++it)
             {
                 auto* storage = m_storages.Find(it.Key().m_type);
-                if (!storage)
+                if (storage == nullptr)
+                {
                     continue;
+                }
                 if (!(*storage)->IsHandleValid(it.Value().m_index, it.Value().m_generation))
                 {
                     stale.PushBack(it.Key());
                 }
             }
             for (size_t i = 0; i < stale.Size(); ++i)
+            {
                 m_pathCache.Remove(stale[i]);
+            }
         }
     }
 

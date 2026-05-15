@@ -159,14 +159,18 @@ namespace waggle
         for (auto it = m_materialPathCache.begin(); it != m_materialPathCache.end(); ++it)
         {
             if (it.Value() != nullptr)
+            {
                 swarm::DestroyMaterial(m_context, it.Value());
+            }
         }
         m_materialPathCache.Clear();
 
         for (auto it = m_textureCache.begin(); it != m_textureCache.end(); ++it)
         {
             if (it.Value() != nullptr)
+            {
                 swarm::DestroyTexture(it.Value());
+            }
         }
         m_textureCache.Clear();
 
@@ -248,7 +252,9 @@ namespace waggle
     swarm::Material* RenderModule::AcquireMaterial(wax::StringView path, ProjectManager* project)
     {
         if (path.IsEmpty())
+        {
             path = kDefaultMaterialPath;
+        }
 
         wax::String pathKey{GetCacheAllocator(), path};
         if (auto* hit = m_materialPathCache.Find(pathKey))
@@ -262,7 +268,9 @@ namespace waggle
     swarm::Texture* RenderModule::AcquireTexture(nectar::AssetId id, wax::StringView path, ProjectManager& project)
     {
         if (!id.IsValid())
+        {
             return nullptr;
+        }
 
         wax::String key{GetCacheAllocator(), path};
         if (auto* hit = m_textureCache.Find(key))
@@ -644,7 +652,9 @@ namespace waggle
         if (auto* hit = m_materialPathCache.Find(key))
         {
             if (*hit != nullptr)
+            {
                 swarm::DestroyMaterial(m_context, *hit);
+            }
             m_materialPathCache.Remove(key);
         }
     }
@@ -652,10 +662,14 @@ namespace waggle
     swarm::Mesh* RenderModule::AcquireMesh(wax::StringView name, nectar::VirtualFilesystem* vfs)
     {
         if (name.IsEmpty())
+        {
             return nullptr;
+        }
 
         if (name == kBuiltinCube)
+        {
             return m_cubeMesh;
+        }
 
         wax::String key{GetCacheAllocator(), name};
         if (auto* hit = m_meshCache.Find(key))
@@ -666,7 +680,9 @@ namespace waggle
         {
             mesh = LoadMeshFromVfs(name, *vfs);
             if (mesh == nullptr)
+            {
                 hive::LogWarning(LOG_RENDER, "RenderModule::AcquireMesh: failed to load '{}'", key.CStr());
+            }
         }
         else
         {
@@ -681,7 +697,9 @@ namespace waggle
     {
         wax::ByteBuffer blob = vfs.ReadSync(name);
         if (blob.IsEmpty())
+        {
             return nullptr;
+        }
 
         comb::ModuleAllocator allocatorOwner{"Waggle.MeshLoad", RoundUpMeshAllocatorCapacity(blob.Size())};
         auto& allocator = allocatorOwner.Get();
@@ -1060,18 +1078,26 @@ namespace waggle
         swarm::CullMode ParseCull(wax::StringView s)
         {
             if (s == wax::StringView{"None"})
+            {
                 return swarm::CullMode::NONE;
+            }
             if (s == wax::StringView{"Front"})
+            {
                 return swarm::CullMode::FRONT;
+            }
             return swarm::CullMode::BACK;
         }
 
         swarm::BlendMode ParseBlend(wax::StringView s)
         {
             if (s == wax::StringView{"AlphaBlend"})
+            {
                 return swarm::BlendMode::ALPHA_BLEND;
+            }
             if (s == wax::StringView{"Additive"})
+            {
                 return swarm::BlendMode::ADDITIVE;
+            }
             return swarm::BlendMode::OPAQUE_;
         }
 

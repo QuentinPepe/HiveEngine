@@ -35,7 +35,7 @@ namespace wax
             : buffer_{}
             , m_size{0}
         {
-            if (str)
+            if (str != nullptr)
             {
                 size_t len = StrLen(str);
                 len = len <= MaxCapacity ? len : MaxCapacity;

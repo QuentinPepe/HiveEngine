@@ -1,39 +1,5 @@
-/**
- * Allocation History (Ring Buffer)
- *
- * Keeps a ring buffer of recent allocations for post-mortem debugging.
- * Useful for analyzing allocation patterns after crashes or assertions.
- *
- * Design:
- * - Ring buffer: Fixed-size circular buffer (default 1000 entries)
- * - Thread-safe: Protected by mutex
- * - Configurable: Size controlled by COMB_MEM_DEBUG_HISTORY_SIZE
- * - Zero overhead: Only compiled when COMB_MEM_DEBUG_HISTORY=1
- *
- * Features:
- * - RecordAllocation: Add allocation to history
- * - RecordDeallocation: Add deallocation to history
- * - DumpToLog: Print recent history to log
- * - DumpToFile: Save history to file (for crash dumps)
- *
- * Example:
- * @code
- *   #if COMB_MEM_DEBUG_HISTORY
- *       comb::debug::AllocationHistory history;
- *
- *       // Record allocation
- *       history.RecordAllocation(info);
- *
- *       // Record deallocation
- *       history.RecordDeallocation(ptr, size);
- *
- *       // Dump on crash
- *       if (crashed) {
- *           history.DumpToFile("crash_memory_history.txt");
- *       }
- *   #endif
- * @endcode
- */
+// Fixed-size ring buffer of recent allocation events, used for post-mortem
+// analysis after crashes. Size is set by COMB_MEM_DEBUG_HISTORY_SIZE.
 
 #pragma once
 
@@ -60,9 +26,6 @@ namespace comb::debug
         DEALLOCATION
     };
 
-    /**
-     * History entry (one allocation or deallocation event)
-     */
     struct HistoryEntry
     {
         HistoryEventType m_type{HistoryEventType::ALLOCATION};
@@ -74,15 +37,7 @@ namespace comb::debug
         uint32_t m_allocationId{0};
     };
 
-    /**
-     * Allocation history ring buffer
-     *
-     * Thread-safe circular buffer that records recent allocation/deallocation events.
-     * Useful for post-mortem analysis after crashes.
-     *
-     * Size: COMB_MEM_DEBUG_HISTORY_SIZE entries (default 1000)
-     * Memory overhead: ~48 bytes per entry (total ~48 KB for 1000 entries)
-     */
+    // Thread-safe circular buffer of recent allocation/deallocation events.
     class AllocationHistory
     {
     public:
@@ -95,17 +50,7 @@ namespace comb::debug
         AllocationHistory(AllocationHistory&&) noexcept = delete;
         AllocationHistory& operator=(AllocationHistory&&) noexcept = delete;
 
-        // Recording API
-
-        /**
-         * Record an allocation event
-         *
-         * Adds entry to ring buffer (overwrites oldest entry when full).
-         *
-         * @param info Allocation metadata
-         *
-         * Thread-safe: Yes (mutex protected)
-         */
+        // Overwrites oldest entry when full.
         void RecordAllocation(const AllocationInfo& info)
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -122,14 +67,6 @@ namespace comb::debug
             AddEntry(entry);
         }
 
-        /**
-         * Record a deallocation event
-         *
-         * @param address User pointer
-         * @param size Size of allocation
-         *
-         * Thread-safe: Yes (mutex protected)
-         */
         void RecordDeallocation(void* address, size_t size)
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -144,38 +81,24 @@ namespace comb::debug
             AddEntry(entry);
         }
 
-        // Query API
-
-        /**
-         * Get number of entries in history (0 to COMB_MEM_DEBUG_HISTORY_SIZE)
-         */
         [[nodiscard]] size_t GetEntryCount() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             return m_count;
         }
 
-        /**
-         * Check if history is empty
-         */
         [[nodiscard]] bool IsEmpty() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             return m_count == 0;
         }
 
-        /**
-         * Check if history is full (reached capacity)
-         */
         [[nodiscard]] bool IsFull() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             return m_count >= COMB_MEM_DEBUG_HISTORY_SIZE;
         }
 
-        /**
-         * Clear all history
-         */
         void Clear()
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -183,16 +106,7 @@ namespace comb::debug
             m_writeIndex = 0;
         }
 
-        // Dump API
-
-        /**
-         * Dump history to log
-         *
-         * Prints recent allocation/deallocation events to hive::Log.
-         *
-         * @param allocatorName Name of allocator (for logging)
-         * @param maxEntries Max entries to print (0 = all)
-         */
+        // maxEntries == 0 prints them all.
         void DumpToLog(const char* allocatorName, size_t maxEntries = 100) const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -228,14 +142,6 @@ namespace comb::debug
             }
         }
 
-        /**
-         * Dump history to file
-         *
-         * Saves history to text file for post-mortem analysis.
-         *
-         * @param filename Output file path
-         * @return true if successful, false otherwise
-         */
         bool DumpToFile(const char* filename) const
         {
             std::lock_guard<std::mutex> lock(m_mutex);

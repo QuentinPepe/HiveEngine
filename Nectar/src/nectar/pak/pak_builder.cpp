@@ -41,8 +41,10 @@ namespace nectar
         path.Append(outputPath.Data(), outputPath.Size());
 
         FILE* file = std::fopen(path.CStr(), "wb");
-        if (!file)
+        if (file == nullptr)
+        {
             return false;
+        }
 
         // Write placeholder header
         NpakHeader header{};
@@ -53,7 +55,7 @@ namespace nectar
 
         // If manifest is set, add it as a blob at sentinel hash
         wax::ByteBuffer manifestData{*m_alloc};
-        if (m_manifest)
+        if (m_manifest != nullptr)
         {
             manifestData = m_manifest->Serialize(*m_alloc);
             BuildEntry me;

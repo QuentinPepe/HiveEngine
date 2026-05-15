@@ -38,8 +38,10 @@ namespace nectar
 #else
         f = fopen(filePath.CStr(), "wb");
 #endif
-        if (!f)
+        if (f == nullptr)
+        {
             return false;
+        }
 
         uint32_t magic = kMagic;
         uint16_t version = kVersion;
@@ -55,14 +57,16 @@ namespace nectar
         wax::HashMap<uint64_t, AssetId> keyToAsset{alloc, entryCount > 0 ? entryCount : size_t{1}};
         cache.ForEachAssetKeys([&](AssetId id, const wax::Vector<uint64_t>& keys) {
             for (size_t i = 0; i < keys.Size(); ++i)
+            {
                 keyToAsset.Insert(keys[i], id);
+            }
         });
 
         cache.ForEachRaw([&](uint64_t compositeKey, const CookCacheEntry& entry) {
             EntryOnDisk d{};
             d.m_compositeKey = compositeKey;
             auto* assetId = keyToAsset.Find(compositeKey);
-            if (assetId)
+            if (assetId != nullptr)
             {
                 d.m_assetHigh = assetId->High();
                 d.m_assetLow = assetId->Low();
@@ -88,8 +92,10 @@ namespace nectar
 #else
         f = fopen(filePath.CStr(), "rb");
 #endif
-        if (!f)
+        if (f == nullptr)
+        {
             return false;
+        }
 
         uint32_t magic = 0;
         uint16_t version = 0;

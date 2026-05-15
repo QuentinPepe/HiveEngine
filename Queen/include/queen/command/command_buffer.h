@@ -14,9 +14,6 @@ namespace queen
 {
     class World;
 
-    /**
-     * Type of deferred command to execute on the World
-     */
     enum class CommandType : uint8_t
     {
         SPAWN,            // Create a new entity
@@ -26,71 +23,13 @@ namespace queen
         SET_COMPONENT,    // Set/update a component on an entity
     };
 
-    /**
-     * Deferred command buffer for safe structural mutations during iteration
-     *
-     * CommandBuffer allows deferred modification of the World, enabling safe
-     * spawn/despawn/add/remove operations during query iteration. Commands are
-     * queued and applied atomically when Flush() is called.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────────┐
-     * │ commands_: Vector<Command> (command descriptors)                   │
-     * │ data_blocks_: Linked list of 4KB blocks for component data         │
-     * │ pending_entities_: Entities pre-allocated for Spawn commands       │
-     * └────────────────────────────────────────────────────────────────────┘
-     *
-     * Data block structure:
-     * ┌────────────────────────────────────────────────────────────────────┐
-     * │ Block 0 (4KB)     │ Block 1 (4KB)     │ Block N (4KB)              │
-     * │ [Component data]  │ [Component data]  │ [Component data]           │
-     * │ [Component data]  │ [...]             │ [...]                      │
-     * └────────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Spawn/Despawn/Add/Remove/Set: O(1) (append command)
-     * - Flush: O(n) where n = total commands
-     * - Memory: Block-based allocation reduces fragmentation
-     *
-     * Thread safety:
-     * - NOT thread-safe. Use per-thread CommandBuffers for parallel systems.
-     *
-     * Limitations:
-     * - Entity from Spawn() is a placeholder until Flush()
-     * - Cannot query spawned entities before Flush()
-     * - Commands applied in insertion order
-     *
-     * Use cases:
-     * - Spawning/despawning during Each() iteration
-     * - Deferred component modification
-     * - Batch structural changes for performance
-     * - System command accumulation before sync point
-     *
-     * Example:
-     * @code
-     *   comb::LinearAllocator alloc{1_MB};
-     *   queen::World world{alloc};
-     *   queen::CommandBuffer cmd{alloc};
-     *
-     *   // During iteration - cannot modify World directly
-     *   world.Query<Read<Health>>().EachWithEntity([&](Entity e, const Health& hp) {
-     *       if (hp.value <= 0) {
-     *           cmd.Despawn(e);  // Deferred
-     *       }
-     *   });
-     *
-     *   // Apply all deferred commands
-     *   cmd.Flush(world);
-     *
-     *   // Spawn with components
-     *   Entity pending = cmd.Spawn()
-     *       .With(Position{0, 0, 0})
-     *       .With(Velocity{1, 0, 0})
-     *       .Build();
-     *
-     *   cmd.Flush(world);  // Now entity exists in World
-     * @endcode
-     */
+    // Single-threaded buffer of deferred structural commands. Component payloads live in a
+    // linked list of fixed-size blocks so individual Add/Set arguments don't fragment the
+    // allocator. Spawned entities use placeholder values until Flush() resolves them.
+    //
+    // Block storage:
+    //   Block 0 (4KB) -> Block 1 (4KB) -> ... -> Block N (4KB)
+    //   each block packs component data sequentially with per-type alignment.
     template <comb::Allocator Allocator> class CommandBuffer;
 
     template <comb::Allocator Allocator> class SpawnCommandBuilder;
@@ -117,9 +56,8 @@ namespace queen
         };
     } // namespace detail
 
-    /**
-     * Builder for spawning entities with components via CommandBuffer
-     */
+    // Fluent helper paired with CommandBuffer::Spawn(); accumulates components against the
+    // spawn placeholder so the eventual Flush() can build the entity in a single archetype move.
     template <comb::Allocator Allocator> class SpawnCommandBuilder
     {
     public:
@@ -193,14 +131,9 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Queue a spawn command for a new entity
-         *
-         * Returns a builder to add components to the pending entity.
-         * The entity will be created when Flush() is called.
-         *
-         * @return SpawnCommandBuilder for chaining component additions
-         */
+        // Queues a spawn and returns a builder whose placeholder entity is resolved at Flush time.
+        // The placeholder carries kPendingDelete so any code path that leaks it before flush is
+        // detectable instead of silently aliasing a real entity slot.
         [[nodiscard]] SpawnCommandBuilder<Allocator> Spawn()
         {
             uint32_t spawnIndex = m_spawnCount++;
@@ -217,11 +150,6 @@ namespace queen
             return SpawnCommandBuilder<Allocator>{*this, spawnIndex};
         }
 
-        /**
-         * Queue a despawn command for an entity
-         *
-         * @param entity Entity to despawn (must be alive at Flush time)
-         */
         void Despawn(Entity entity)
         {
             detail::Command cmd{};
@@ -234,15 +162,7 @@ namespace queen
             m_commands.PushBack(cmd);
         }
 
-        /**
-         * Queue an add component command
-         *
-         * If the entity already has the component, this acts as Set.
-         *
-         * @tparam T Component type
-         * @param entity Target entity
-         * @param component Component value to add
-         */
+        // Queues an Add; collapses to Set semantics at flush time if the entity already has T.
         template <typename T> void Add(Entity entity, T&& component)
         {
             using DecayedT = std::decay_t<T>;
@@ -261,12 +181,6 @@ namespace queen
             m_commands.PushBack(cmd);
         }
 
-        /**
-         * Queue a remove component command
-         *
-         * @tparam T Component type to remove
-         * @param entity Target entity
-         */
         template <typename T> void Remove(Entity entity)
         {
             detail::Command cmd{};
@@ -279,13 +193,7 @@ namespace queen
             m_commands.PushBack(cmd);
         }
 
-        /**
-         * Queue a set component command (add or update)
-         *
-         * @tparam T Component type
-         * @param entity Target entity
-         * @param component Component value to set
-         */
+        // Upsert variant: replaces T if present, otherwise adds it.
         template <typename T> void Set(Entity entity, T&& component)
         {
             using DecayedT = std::decay_t<T>;
@@ -304,19 +212,11 @@ namespace queen
             m_commands.PushBack(cmd);
         }
 
-        /**
-         * Apply all queued commands to the World
-         *
-         * Commands are applied in insertion order. After Flush(), the
-         * CommandBuffer is cleared and ready for reuse.
-         *
-         * @param world Target World to apply commands to
-         */
+        // Drains the buffer into the World in insertion order, then resets it for reuse.
         void Flush(World& world);
 
-        /**
-         * Clear all queued commands without applying them
-         */
+        // Drops queued commands without touching the World; still runs component destructors
+        // for any payload that was already constructed in a block.
         void Clear()
         {
             for (size_t i = 0; i < m_commands.Size(); ++i)
@@ -335,30 +235,18 @@ namespace queen
             ClearBlocks();
         }
 
-        /**
-         * Get the number of queued commands
-         */
         [[nodiscard]] size_t CommandCount() const noexcept
         {
             return m_commands.Size();
         }
 
-        /**
-         * Check if command buffer is empty
-         */
         [[nodiscard]] bool IsEmpty() const noexcept
         {
             return m_commands.IsEmpty();
         }
 
-        /**
-         * Get a spawned entity by its spawn index
-         *
-         * Only valid after Flush() has been called.
-         *
-         * @param spawn_index Index returned by SpawnCommandBuilder
-         * @return The real entity if spawned, Entity::Invalid() otherwise
-         */
+        // Resolves a Spawn placeholder to its real Entity after Flush(); returns Invalid()
+        // before flush or for out-of-range indices.
         [[nodiscard]] Entity GetSpawnedEntity(uint32_t spawnIndex) const noexcept
         {
             if (spawnIndex < m_spawnedEntities.Size())

@@ -6,9 +6,6 @@
 
 namespace queen
 {
-    /**
-     * Execution state of a system in the scheduler
-     */
     enum class SystemState : uint8_t
     {
         PENDING, // Waiting for dependencies
@@ -17,29 +14,9 @@ namespace queen
         COMPLETE // Execution finished
     };
 
-    /**
-     * A node in the system dependency graph
-     *
-     * SystemNode represents a system and its relationships to other systems
-     * in the dependency graph. It tracks which systems must run before this one
-     * (dependencies) and which systems are waiting for this one (dependents).
-     *
-     * Use cases:
-     * - Building execution order for systems
-     * - Detecting parallel execution opportunities
-     * - Managing system completion notifications
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ system_id_: SystemId                                            │
-     * │ state_: SystemState                                             │
-     * │ dependency_count_: uint16_t (original count)                    │
-     * │ unfinished_deps_: uint16_t (runtime countdown)                  │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Note: Dependencies and dependents are stored externally in the graph
-     * using adjacency lists to allow dynamic sizing with allocators.
-     */
+    // Per-system node in the dependency graph. Adjacency lives in the graph's
+    // external arrays; this node only holds id, runtime state, and the
+    // dependency countdown used to detect "ready to run".
     class SystemNode
     {
     public:
@@ -92,19 +69,14 @@ namespace queen
             ++m_unfinishedDeps;
         }
 
-        /**
-         * Reset to pending state for a new frame
-         */
         constexpr void Reset() noexcept
         {
             m_state = SystemState::PENDING;
             m_unfinishedDeps = m_dependencyCount;
         }
 
-        /**
-         * Decrement unfinished dependency count
-         * @return true if all dependencies are now satisfied (ready to run)
-         */
+        // Returns true when the last unfinished dep was just satisfied, so the
+        // caller can submit this node without re-querying its state.
         constexpr bool DecrementDeps() noexcept
         {
             if (m_unfinishedDeps > 0)

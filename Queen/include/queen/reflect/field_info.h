@@ -7,12 +7,6 @@
 
 namespace queen
 {
-    /**
-     * Field type enumeration for serialization
-     *
-     * Represents the primitive types that can be serialized.
-     * Complex types are built from these primitives.
-     */
     enum class FieldType : uint8_t
     {
         INVALID = 0,
@@ -42,39 +36,19 @@ namespace queen
         FIXED_ARRAY, // C-style T[N] array
     };
 
-    /**
-     * Runtime field metadata for reflection
-     *
-     * Stores information about a single field in a component:
-     * - Name for debugging/editors
-     * - Offset for memory access
-     * - Type for serialization
-     * - Size for memcpy operations
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ name: const char* (8 bytes)                                    │
-     * │ offset: size_t (8 bytes)                                       │
-     * │ size: size_t (8 bytes)                                         │
-     * │ type: FieldType (1 byte) + padding (7 bytes)                   │
-     * │ nested_type_id: TypeId (8 bytes) - for Struct types            │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - All operations: O(1)
-     * - Size: 40 bytes
-     *
-     * Example:
-     * @code
-     *   FieldInfo info{"x", offsetof(Position, x), sizeof(float), FieldType::Float32};
-     *   void* field_ptr = static_cast<std::byte*>(component_ptr) + info.offset;
-     * @endcode
-     */
+    // Runtime field metadata used by reflection-based (de)serialization.
+    //
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────────┐
+    // │ name: const char* (8 bytes)                                    │
+    // │ offset: size_t (8 bytes)                                       │
+    // │ size: size_t (8 bytes)                                         │
+    // │ type: FieldType (1 byte) + padding (7 bytes)                   │
+    // │ nested_type_id: TypeId (8 bytes) - for Struct types            │
+    // └────────────────────────────────────────────────────────────────┘
     namespace detail
     {
-        /**
-         * Constexpr-safe string comparison (no <cstring> dependency)
-         */
+        // Constexpr-safe string comparison (no <cstring> dependency).
         constexpr bool StringsEqual(const char* a, const char* b) noexcept
         {
             if (a == b)

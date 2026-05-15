@@ -32,7 +32,9 @@ namespace nectar
 
         auto mapped = MappedFile::Open(full.View());
         if (!mapped.IsValid())
+        {
             return buffer;
+        }
 
         buffer.Append(mapped.Data(), mapped.Size());
         return buffer;
@@ -42,8 +44,10 @@ namespace nectar
     {
         auto full = BuildFullPath(path, *m_alloc);
         std::FILE* file = std::fopen(full.CStr(), "rb");
-        if (!file)
+        if (file == nullptr)
+        {
             return false;
+        }
         std::fclose(file);
         return true;
     }
@@ -52,8 +56,10 @@ namespace nectar
     {
         auto full = BuildFullPath(path, *m_alloc);
         std::FILE* file = std::fopen(full.CStr(), "rb");
-        if (!file)
+        if (file == nullptr)
+        {
             return FileInfo{0, false};
+        }
 
         std::fseek(file, 0, SEEK_END);
         long size = std::ftell(file);
@@ -70,7 +76,9 @@ namespace nectar
         std::error_code ec;
         auto it = std::filesystem::directory_iterator(full.CStr(), ec);
         if (ec)
+        {
             return;
+        }
 
         for (const auto& entry : it)
         {

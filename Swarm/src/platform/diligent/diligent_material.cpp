@@ -108,7 +108,7 @@ namespace swarm
                 memoryInfo.NumSources = 1;
                 memoryInfo.CopySources = true;
                 CreateMemoryShaderSourceFactory(memoryInfo, &memoryFactory);
-                if (!memoryFactory)
+                if (memoryFactory == nullptr)
                 {
                     hive::LogError(LOG_SWARM, "CreateMaterial({}): memory source factory failed", debugName);
                     return false;
@@ -124,7 +124,8 @@ namespace swarm
                 CreateCompoundShaderSourceFactory(compoundInfo, &compoundFactory);
 
                 ci.FilePath = debugName;
-                ci.pShaderSourceStreamFactory = compoundFactory ? compoundFactory.RawPtr() : memoryFactory.RawPtr();
+                ci.pShaderSourceStreamFactory =
+                    (compoundFactory != nullptr) ? compoundFactory.RawPtr() : memoryFactory.RawPtr();
                 if (ref.m_entry != nullptr && ref.m_entry[0] != '\0')
                 {
                     ci.EntryPoint = ref.m_entry;
@@ -142,7 +143,7 @@ namespace swarm
             }
 
             library.GetCache()->CreateShader(ci, &outShader);
-            if (!outShader)
+            if (outShader == nullptr)
             {
                 hive::LogError(LOG_SWARM, "CreateMaterial({}): shader compilation failed", debugName);
                 return false;
@@ -232,7 +233,7 @@ namespace swarm
         // The pixel shader picks one of two binding modes: bindless if it declares the
         // runtime array `g_textures`, otherwise one-texture-per-variable as before.
         bool usesBindless = false;
-        if (pixelShader)
+        if (pixelShader != nullptr)
         {
             const Uint32 resCount = pixelShader->GetResourceCount();
             for (Uint32 i = 0; i < resCount; ++i)
@@ -277,7 +278,9 @@ namespace swarm
             {
                 const MaterialTextureBinding& tb = desc.m_textures[t];
                 if (tb.m_name == nullptr || tb.m_texture == nullptr)
+                {
                     continue;
+                }
                 mutableVars.PushBack({SHADER_TYPE_PIXEL, tb.m_name, SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE});
 
                 Diligent::SamplerDesc sd;
@@ -300,44 +303,30 @@ namespace swarm
 
         RefCntAutoPtr<IPipelineState> pipelineState;
         context->m_shaderLibrary->GetCache()->CreateGraphicsPipelineState(psoInfo, &pipelineState);
-        if (!pipelineState)
+        if (pipelineState == nullptr)
         {
             hive::LogError(LOG_SWARM, "CreateMaterial({}): pipeline state creation failed", debugName);
             return nullptr;
         }
 
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_VERTEX, "ViewConstants"))
-        {
-            var->Set(context->m_viewConstantBuffer);
-        }
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_VERTEX, "ObjectConstants"))
-        {
-            var->Set(context->m_objectConstantBuffer);
-        }
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_PIXEL, "ObjectConstants"))
-        {
-            var->Set(context->m_objectConstantBuffer);
-        }
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_VERTEX, "TimeConstants"))
-        {
-            var->Set(context->m_timeConstantBuffer);
-        }
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_PIXEL, "ViewConstants"))
-        {
-            var->Set(context->m_viewConstantBuffer);
-        }
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_PIXEL, "TimeConstants"))
-        {
-            var->Set(context->m_timeConstantBuffer);
-        }
-        if (auto* var = pipelineState->GetStaticVariableByName(SHADER_TYPE_PIXEL, "g_materials"))
-        {
-            var->Set(context->m_materialsBuffer->ShaderView());
-        }
+        auto bindStatic = [&](SHADER_TYPE stage, const char* name, IDeviceObject* obj) {
+            auto* var = pipelineState->GetStaticVariableByName(stage, name);
+            if (var != nullptr)
+            {
+                var->Set(obj);
+            }
+        };
+        bindStatic(SHADER_TYPE_VERTEX, "ViewConstants", context->m_viewConstantBuffer);
+        bindStatic(SHADER_TYPE_VERTEX, "ObjectConstants", context->m_objectConstantBuffer);
+        bindStatic(SHADER_TYPE_PIXEL, "ObjectConstants", context->m_objectConstantBuffer);
+        bindStatic(SHADER_TYPE_VERTEX, "TimeConstants", context->m_timeConstantBuffer);
+        bindStatic(SHADER_TYPE_PIXEL, "ViewConstants", context->m_viewConstantBuffer);
+        bindStatic(SHADER_TYPE_PIXEL, "TimeConstants", context->m_timeConstantBuffer);
+        bindStatic(SHADER_TYPE_PIXEL, "g_materials", context->m_materialsBuffer->ShaderView());
 
         RefCntAutoPtr<IShaderResourceBinding> srb;
         pipelineState->CreateShaderResourceBinding(&srb, true);
-        if (!srb)
+        if (srb == nullptr)
         {
             hive::LogError(LOG_SWARM, "CreateMaterial({}): SRB creation failed", debugName);
             return nullptr;
@@ -377,11 +366,15 @@ namespace swarm
         {
             const MaterialParamBinding& binding = desc.m_params[p];
             if (binding.m_name == nullptr || binding.m_data == nullptr)
+            {
                 continue;
+            }
             for (const StandardField& f : kStandardLayout)
             {
                 if (std::strcmp(f.m_name, binding.m_name) != 0)
+                {
                     continue;
+                }
                 const uint32_t copySize = (binding.m_size < f.m_size) ? binding.m_size : f.m_size;
                 std::memcpy(reinterpret_cast<uint8_t*>(&params) + f.m_offset, binding.m_data, copySize);
                 break;
@@ -394,7 +387,8 @@ namespace swarm
         if (usesBindless)
         {
             BindlessHeap* heap = context->m_bindlessHeap;
-            if (auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, "g_textures"))
+            auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, "g_textures");
+            if (var != nullptr)
             {
                 // Every slot must resolve to a non-null view for validation. Empty slots fall
                 // back to the engine default white texture; the shader only samples slots its
@@ -422,9 +416,14 @@ namespace swarm
             {
                 const MaterialTextureBinding& tb = desc.m_textures[t];
                 if (tb.m_name == nullptr || tb.m_texture == nullptr || tb.m_texture->m_shaderView == nullptr)
+                {
                     continue;
-                if (auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, tb.m_name))
+                }
+                auto* var = srb->GetVariableByName(SHADER_TYPE_PIXEL, tb.m_name);
+                if (var != nullptr)
+                {
                     var->Set(tb.m_texture->m_shaderView);
+                }
             }
         }
 

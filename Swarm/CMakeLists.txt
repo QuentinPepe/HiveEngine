@@ -44,6 +44,14 @@ function(swarm_find_prebuilt_diligent PACKAGE_DIR OUT_FOUND OUT_SOURCE_DIR)
         set(_swarm_prev_find_targets_global "${CMAKE_FIND_PACKAGE_TARGETS_GLOBAL}")
     endif()
 
+    # A cached HiveDiligent_DIR pointing to a different config (e.g. diligent-debug while
+    # CMAKE_BUILD_TYPE switched to Release) wins over NO_DEFAULT_PATH below, so static
+    # plugin objects keep the stale _ITERATOR_DEBUG_LEVEL and break the EXE link.
+    if(DEFINED CACHE{HiveDiligent_DIR}
+        AND NOT "$CACHE{HiveDiligent_DIR}" MATCHES "^${PACKAGE_DIR}/?")
+        unset(HiveDiligent_DIR CACHE)
+    endif()
+
     set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
     find_package(HiveDiligent CONFIG QUIET
         PATHS "${PACKAGE_DIR}"
@@ -189,6 +197,28 @@ if(NOT _swarm_diligent_build_config)
     set(_swarm_diligent_build_config "Debug")
 endif()
 
+# Profile and Retail share the Release stdlib and can reuse the Release prebuilt.
+if(NOT _swarm_diligent_build_config STREQUAL "Debug")
+    set(_swarm_diligent_build_config "Release")
+endif()
+
+function(_swarm_ensure_diligent_config BUILD_CONFIG)
+    string(TOLOWER "${BUILD_CONFIG}" _suffix)
+    set(_package_dir "${_swarm_engine_root_dir}/out/build/diligent-${_suffix}/package")
+    set(_build_dir "${_swarm_engine_root_dir}/out/build/diligent-${_suffix}")
+    if(EXISTS "${_package_dir}/HiveDiligentConfig.cmake")
+        return()
+    endif()
+    if(NOT HIVE_BOOTSTRAP_DILIGENT)
+        return()
+    endif()
+    swarm_bootstrap_prebuilt_diligent(
+        "${_build_dir}"
+        "${_package_dir}"
+        "${BUILD_CONFIG}"
+    )
+endfunction()
+
 set(_swarm_diligent_package_dir "${HIVE_DILIGENT_PACKAGE_DIR}")
 if(NOT _swarm_diligent_package_dir)
     string(TOLOWER "${_swarm_diligent_build_config}" _swarm_diligent_config_suffix)
@@ -229,6 +259,17 @@ if(_swarm_diligent_provider STREQUAL "AUTO" OR _swarm_diligent_provider STREQUAL
             _swarm_using_prebuilt_diligent
             _swarm_prebuilt_diligent_source_dir
         )
+
+        # Best-effort: also build the opposite canonical config so future preset
+        # switches between Debug and Release land on a ready-to-use prebuilt.
+        if(NOT HIVE_DILIGENT_SKIP_SECONDARY_BOOTSTRAP)
+            if(_swarm_diligent_build_config STREQUAL "Debug")
+                set(_swarm_diligent_secondary "Release")
+            else()
+                set(_swarm_diligent_secondary "Debug")
+            endif()
+            _swarm_ensure_diligent_config("${_swarm_diligent_secondary}")
+        endif()
     endif()
 
     if(_swarm_using_prebuilt_diligent)

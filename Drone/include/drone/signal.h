@@ -7,11 +7,7 @@ namespace drone
 {
     // One-shot wake-up signal. Producer Set()s, consumer Wait()s (then Reset()s, or uses
     // WaitAndReset). Uses C++20 atomic::wait/notify (futex on Linux, WaitOnAddress on Win32)
-    // for zero-CPU parking. Same primitive family as drone::Counter, but for "wait until
-    // signaled" semantics rather than "wait for N completions to drop the counter to zero".
-    //
-    // Use cases: signal-driven dedicated threads (render thread, audio mixer) that wake on
-    // demand instead of polling a tick interval like drone::ServiceThread.
+    // for zero-CPU parking, vs. drone::Counter which waits for N completions to reach zero.
     class Signal
     {
     public:

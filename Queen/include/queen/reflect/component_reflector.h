@@ -29,19 +29,8 @@ namespace queen
         } && (sizeof(T) == T::MaxCapacity + 2) && std::is_trivially_copyable_v<T>;
     } // namespace detail
 
-    /**
-     * Chaining builder for field annotations
-     *
-     * Returned by ComponentReflector::Field(). Allows chaining editor
-     * attributes without requiring a separate registration step.
-     * Return value is safely discardable (backward-compatible).
-     *
-     * Example:
-     * @code
-     *   r.Field("speed", &T::speed).Range(0.f, 100.f).Tooltip("Movement speed");
-     *   r.Field("name", &T::name);  // no chaining — zero cost
-     * @endcode
-     */
+    // Chaining builder for optional editor attributes. Return value is
+    // safely discardable so callers that don't annotate pay nothing.
     class FieldBuilder
     {
     public:
@@ -101,61 +90,17 @@ namespace queen
         FieldAttributes& m_attrs;
     };
 
-    /**
-     * Component field registration builder
-     *
-     * Used by components in their static Reflect() function to register
-     * their fields for serialization. Captures field layout at compile-time
-     * and stores it in a fixed-size array.
-     *
-     * This is an intermediate solution while waiting for C++26 reflection.
-     * Components must define a static Reflect() function that uses this class.
-     *
-     * Performance characteristics:
-     * - Field registration: O(1) - array append
-     * - Field lookup by name: O(n) - linear search
-     * - Field lookup by index: O(1) - array access
-     *
-     * Limitations:
-     * - Fixed maximum field count (template parameter)
-     * - No support for inheritance
-     *
-     * Example:
-     * @code
-     *   struct Position {
-     *       float x, y, z;
-     *
-     *       static void Reflect(ComponentReflector<>& r) {
-     *           r.Field("x", &Position::x);
-     *           r.Field("y", &Position::y);
-     *           r.Field("z", &Position::z);
-     *       }
-     *   };
-     *
-     *   struct Enemy {
-     *       float speed;
-     *       RenderMode mode;
-     *
-     *       static void Reflect(ComponentReflector<>& r) {
-     *           r.Field("speed", &Enemy::speed).Range(0.f, 100.f);
-     *           r.Field("mode", &Enemy::mode);
-     *       }
-     *   };
-     * @endcode
-     *
-     * @tparam MaxFields Maximum number of fields to support (default 32)
-     */
+    // Component field registration builder used inside a component's static
+    // Reflect() function. Fixed-size storage avoids heap allocation. Intermediate
+    // solution until C++26 reflection lands.
     template <size_t MaxFields = 32> class ComponentReflector
     {
     public:
         constexpr ComponentReflector() noexcept = default;
 
-        /**
-         * Tag the whole component with a category. User by default.
-         *
-         * System  → engine-managed, hidden from "Add Component" picker.
-         * Internal→ never shown in the inspector at all.
-         */
+        // Tag the whole component with a category. User by default.
+        // System: engine-managed, hidden from "Add Component" picker.
+        // Internal: never shown in the inspector at all.
         constexpr void Category(ComponentCategory category) noexcept
         {
             m_category = category;
@@ -166,16 +111,7 @@ namespace queen
             return m_category;
         }
 
-        /**
-         * Register a field with automatic type deduction
-         *
-         * Returns a FieldBuilder for optional chaining of editor annotations.
-         * The return value can safely be discarded.
-         *
-         * @param name Field name (must be string literal or static storage)
-         * @param member_ptr Pointer-to-member for the field
-         * @return FieldBuilder for chaining annotations
-         */
+        // Name must be a string literal or have static storage — stored by pointer.
         template <typename T, typename C> FieldBuilder Field(const char* name, T C::* memberPtr) noexcept
         {
             hive::Assert(m_count < MaxFields, "Too many fields, increase MaxFields");
@@ -243,27 +179,17 @@ namespace queen
             return FieldBuilder{info, m_attributes[idx]};
         }
 
-        /**
-         * Get number of registered fields
-         */
         [[nodiscard]] constexpr size_t Count() const noexcept
         {
             return m_count;
         }
 
-        /**
-         * Get field info by index
-         */
         [[nodiscard]] constexpr const FieldInfo& operator[](size_t index) const noexcept
         {
             return m_fields[index];
         }
 
-        /**
-         * Get field info by name (linear search)
-         *
-         * @return Pointer to FieldInfo or nullptr if not found
-         */
+        // Linear search; returns nullptr if not found.
         [[nodiscard]] constexpr const FieldInfo* FindField(const char* name) const noexcept
         {
             for (size_t i = 0; i < m_count; ++i)
@@ -276,17 +202,11 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Get pointer to fields array
-         */
         [[nodiscard]] constexpr const FieldInfo* Data() const noexcept
         {
             return m_fields;
         }
 
-        /**
-         * Iterate over all fields
-         */
         [[nodiscard]] constexpr const FieldInfo* Begin() const noexcept
         {
             return m_fields;
@@ -312,12 +232,8 @@ namespace queen
         ComponentCategory m_category = ComponentCategory::USER;
     };
 
-    /**
-     * Type-erased reflection data
-     *
-     * Stores reflection metadata in a non-template form for use in
-     * ComponentRegistry and serialization.
-     */
+    // Non-template view of reflection data, used by ComponentRegistry and
+    // serialization so consumers don't need to know MaxFields.
     struct ComponentReflection
     {
         const FieldInfo* m_fields = nullptr;

@@ -6,6 +6,11 @@
 
 #include <wax/containers/string.h>
 
+#include <queen/reflect/component_registry.h>
+
+#include <waggle/project/project_manager.h>
+#include <waggle/scene/scene_io.h>
+
 #include <nectar/database/asset_database.h>
 #include <nectar/database/import_cache.h>
 #include <nectar/material/material_importer.h>
@@ -493,6 +498,34 @@ namespace brood::launcher
             }
         }
         QueueSceneRecoveryPrompt(state);
+#else
+        // Game and Headless builds have no editor state to track and no Forge linkage,
+        // but they still need the startup scene loaded into the World so gameplay code
+        // sees its entities. waggle::LoadScene does the same work as the editor path
+        // (deserialize + EnsureRuntimeTransformComponents) without any Forge dependency.
+        {
+            const wax::StringView startupScene = state.m_project->Project().StartupSceneRelative();
+            if (!startupScene.IsEmpty())
+            {
+                ReportProgress(progress, progressUd, "Loading scene", 0, 1);
+                const std::filesystem::path startupScenePath =
+                    std::filesystem::path{state.m_project->Paths().m_assets.CStr()}
+                    / wax::String{startupScene}.CStr();
+                (void)waggle::LoadScene(*ctx.m_world, state.m_componentRegistry,
+                                        startupScenePath.string().c_str());
+                ReportProgress(progress, progressUd, "Loading scene", 1, 1);
+
+                if (ctx.m_renderModule != nullptr)
+                {
+                    const auto preloadStart = std::chrono::steady_clock::now();
+                    ctx.m_renderModule->PreloadScene(*ctx.m_world, state.m_project, progress, progressUd);
+                    const auto preloadEnd = std::chrono::steady_clock::now();
+                    const double preloadMs =
+                        std::chrono::duration<double, std::milli>(preloadEnd - preloadStart).count();
+                    hive::LogInfo(LOG_LAUNCHER, "Scene preload completed in {:.1f} ms", preloadMs);
+                }
+            }
+        }
 #endif
         ReportProgress(progress, progressUd, "Loading gameplay module", 0, 1);
         TryLoadGameplayModule(ctx, state);

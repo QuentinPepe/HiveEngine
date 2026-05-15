@@ -10,47 +10,16 @@
 
 namespace queen
 {
-    /**
-     * Inverted index for fast archetype lookup by component
-     *
-     * Maps component TypeIds to lists of archetypes containing that component.
-     * Used to efficiently resolve queries by finding archetypes that match
-     * the query's component requirements.
-     *
-     * Memory layout:
-     * ┌──────────────────────────────────────────────────────────────┐
-     * │ index_: HashMap<TypeId, Vector<Archetype*>>                  │
-     * │   TypeId_Position → [Archetype_1, Archetype_3, Archetype_7]  │
-     * │   TypeId_Velocity → [Archetype_1, Archetype_5]               │
-     * │   TypeId_Health   → [Archetype_3, Archetype_5, Archetype_7]  │
-     * └──────────────────────────────────────────────────────────────┘
-     *
-     * Query resolution example:
-     *   Query<Position, Velocity>:
-     *   1. Get archetypes with Position: {1, 3, 7}
-     *   2. Get archetypes with Velocity: {1, 5}
-     *   3. Intersection: {1}
-     *
-     * Performance characteristics:
-     * - RegisterArchetype: O(n) where n = component count
-     * - GetArchetypesWith: O(1) hash lookup
-     * - GetArchetypesWithAll: O(k*m) where k = types, m = avg archetypes
-     *
-     * Limitations:
-     * - Not thread-safe
-     * - Archetypes cannot be unregistered
-     *
-     * Example:
-     * @code
-     *   ComponentIndex<...> index{alloc};
-     *   index.RegisterArchetype(archetype);
-     *
-     *   auto* archetypes = index.GetArchetypesWith<Position>();
-     *   for (auto* arch : archetypes) {
-     *       // iterate entities...
-     *   }
-     * @endcode
-     */
+    // Inverted index TypeId -> archetypes containing that component, used for query resolution.
+    // GetArchetypesWithAll intersects per-type lists by iterating the smallest list first.
+    // Archetypes can be registered but never unregistered.
+    // Memory layout:
+    // ┌──────────────────────────────────────────────────────────────┐
+    // │ index_: HashMap<TypeId, Vector<Archetype*>>                  │
+    // │   TypeId_Position -> [Archetype_1, Archetype_3, Archetype_7] │
+    // │   TypeId_Velocity -> [Archetype_1, Archetype_5]              │
+    // │   TypeId_Health   -> [Archetype_3, Archetype_5, Archetype_7] │
+    // └──────────────────────────────────────────────────────────────┘
     template <comb::Allocator Allocator> class ComponentIndex
     {
     public:

@@ -54,7 +54,9 @@ namespace hive
 
         const auto index = static_cast<size_t>(severity);
         if (index >= kSeverityLabels.size())
+        {
             return;
+        }
 
         std::cout << kSeverityLabels[index] << category.GetFullPath() << " - " << message << std::endl;
     }

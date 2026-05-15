@@ -119,7 +119,7 @@ namespace wax
         ~Vector() noexcept
         {
             Clear();
-            if (m_data)
+            if (m_data != nullptr)
             {
                 m_allocator.Deallocate(m_data);
                 m_data = nullptr;
@@ -156,7 +156,7 @@ namespace wax
             if (this != &other)
             {
                 Clear();
-                if (m_data)
+                if (m_data != nullptr)
                 {
                     m_allocator.Deallocate(m_data);
                     m_data = nullptr;
@@ -200,7 +200,7 @@ namespace wax
             if (this != &other)
             {
                 Clear();
-                if (m_data)
+                if (m_data != nullptr)
                 {
                     m_allocator.Deallocate(m_data);
                 }
@@ -357,7 +357,7 @@ namespace wax
             T* newData = static_cast<T*>(m_allocator.Allocate(newCapacity * sizeof(T), alignof(T)));
             hive::Check(newData != nullptr, "Vector allocation failed");
 
-            if (m_data)
+            if (m_data != nullptr)
             {
                 if constexpr (std::is_trivially_copyable_v<T>)
                 {
@@ -388,7 +388,7 @@ namespace wax
 
             if (m_size == 0)
             {
-                if (m_data)
+                if (m_data != nullptr)
                 {
                     m_allocator.Deallocate(m_data);
                     m_data = nullptr;

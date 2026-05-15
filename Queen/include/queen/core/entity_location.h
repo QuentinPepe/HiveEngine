@@ -10,13 +10,8 @@
 
 namespace queen
 {
-    /**
-     * Record of where an entity's data is stored
-     *
-     * Used by the World to locate an entity's components in O(1).
-     * Stores pointer to archetype and position within the archetype's table.
-     * Template parameter ArchetypeType allows forward declaration.
-     */
+    // Where an entity's data lives: (archetype pointer, row index in its table).
+    // Templated on ArchetypeType so the map can be declared without including archetype.h.
     template <typename ArchetypeType> struct EntityRecordT
     {
         static constexpr uint32_t kInvalidRow = UINT32_MAX;
@@ -36,21 +31,8 @@ namespace queen
         }
     };
 
-    /**
-     * Maps entities to their storage location (with archetype pointer)
-     *
-     * Provides O(1) lookup from Entity to (Archetype*, Row) for fast
-     * component access. Indexed by entity index, so grows with max entity.
-     *
-     * Performance characteristics:
-     * - Get: O(1) - direct array access
-     * - Set: O(1) - direct array access
-     * - Memory: O(max_entity_index) * sizeof(EntityRecordT)
-     *
-     * Limitations:
-     * - Memory grows with highest entity index ever used
-     * - Not thread-safe
-     */
+    // Direct-indexed map from Entity.Index() to its EntityRecord. Memory grows monotonically
+    // with the highest entity index ever used; never shrinks.
     template <comb::Allocator Allocator, typename ArchetypeType> class EntityLocationMap
     {
     public:

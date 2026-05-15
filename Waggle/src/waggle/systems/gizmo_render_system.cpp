@@ -73,16 +73,22 @@ namespace waggle
         for (queen::Entity entity : toDespawn)
         {
             if (world.IsAlive(entity))
+            {
                 world.Despawn(entity);
+            }
         }
 
         if (GetPlayState(world) == PlayState::PLAYING)
+        {
             return;
+        }
 
         const auto* selection = world.Resource<SelectionState>();
         const auto* gizmoState = world.Resource<GizmoStateResource>();
         if (selection == nullptr || gizmoState == nullptr || selection->m_entities.IsEmpty())
+        {
             return;
+        }
 
         hive::math::Float3 pivot{};
         uint32_t pivotCount = 0;
@@ -90,17 +96,23 @@ namespace waggle
         {
             const auto entity = selection->m_entities[i];
             if (!world.IsAlive(entity))
+            {
                 continue;
+            }
             const auto* wm = world.Get<WorldMatrix>(entity);
             if (wm == nullptr)
+            {
                 continue;
+            }
             pivot.m_x += wm->m_matrix.m_m[3][0];
             pivot.m_y += wm->m_matrix.m_m[3][1];
             pivot.m_z += wm->m_matrix.m_m[3][2];
             ++pivotCount;
         }
         if (pivotCount == 0)
+        {
             return;
+        }
         const float inv = 1.f / static_cast<float>(pivotCount);
         pivot.m_x *= inv;
         pivot.m_y *= inv;
@@ -109,7 +121,9 @@ namespace waggle
         hive::math::Float3 camPos{0.f, 0.f, 0.f};
         const Camera* camera = nullptr;
         if (!ResolveEditorCamera(world, &camPos, &camera))
+        {
             return;
+        }
 
         const float scale = ComputeScreenConstantScale(pivot, camPos, camera->m_fovRad);
 
@@ -119,7 +133,9 @@ namespace waggle
             const auto primary = selection->m_entities[0];
             const auto* transform = world.IsAlive(primary) ? world.Get<Transform>(primary) : nullptr;
             if (transform != nullptr)
+            {
                 orientation = transform->m_rotation;
+            }
         }
 
         const hive::math::Float3 scaleVec{scale, scale, scale};

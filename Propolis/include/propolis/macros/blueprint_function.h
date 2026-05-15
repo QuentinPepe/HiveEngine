@@ -9,31 +9,13 @@
 
 #include <cstdint>
 
-// HIVE_BLUEPRINT_FUNCTION_N — declare a C++ function callable from blueprints.
-//
-// Usage:
-//   HIVE_BLUEPRINT_FUNCTION_3(mygame::SmoothDamp, "Math", float,
-//       float, current,
-//       float, target,
-//       float, smoothing)
-//   {
-//       return current + (target - current) * smoothing;
-//   }
-//
-// The macro:
-// 1. Forward-declares the user function with the given qualified name.
-// 2. Emits a static FunctionEntry describing the signature.
-// 3. Emits a static FunctionRegistrar that pushes the entry into the calling
-//    module's intrusive linked list at static init time.
-// 4. Lets the user provide the function body inline immediately after.
-//
-// At runtime, HiveGameplayRegister must call propolis::RegisterAllBlueprintFunctions(world)
+// HIVE_BLUEPRINT_FUNCTION_N declares a C++ function callable from blueprints.
+// Emits a static FunctionEntry plus a FunctionRegistrar that pushes it into the calling
+// module's intrusive list at static init; user body follows the macro inline.
+// HiveGameplayRegister must call propolis::RegisterAllBlueprintFunctions(world) at runtime
 // to copy this list into the World's FunctionRegistry resource.
-//
-// To migrate to C++26 reflection, replace the macro form with:
-//     [[hive::blueprint_function(category="Math")]]
-//     float mygame::SmoothDamp(float current, float target, float smoothing) { ... }
-// The runtime structures (FunctionEntry, FunctionRegistry) stay identical.
+// C++26 reflection migration: replace with [[hive::blueprint_function(category="Math")]] —
+// the FunctionEntry/FunctionRegistry runtime types stay identical.
 
 namespace propolis::detail
 {

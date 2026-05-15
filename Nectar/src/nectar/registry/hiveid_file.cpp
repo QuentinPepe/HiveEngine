@@ -32,32 +32,44 @@ namespace
     uint8_t HexDigit(char c)
     {
         if (c >= '0' && c <= '9')
+        {
             return static_cast<uint8_t>(c - '0');
+        }
         if (c >= 'a' && c <= 'f')
+        {
             return static_cast<uint8_t>(10 + c - 'a');
+        }
         if (c >= 'A' && c <= 'F')
+        {
             return static_cast<uint8_t>(10 + c - 'A');
+        }
         return 0;
     }
 
     nectar::AssetId HexToAssetId(const char* hex, size_t len)
     {
         if (len != 32)
+        {
             return nectar::AssetId::Invalid();
+        }
 
         uint64_t high = 0;
         uint64_t low = 0;
 
         for (size_t i = 0; i < 16; ++i)
+        {
             high = (high << 4) | HexDigit(hex[i]);
+        }
         for (size_t i = 0; i < 16; ++i)
+        {
             low = (low << 4) | HexDigit(hex[16 + i]);
+        }
 
         return nectar::AssetId{high, low};
     }
     bool ContainsPathTraversal(const char* path)
     {
-        for (const char* p = path; *p; ++p)
+        for (const char* p = path; *p != '\0'; ++p)
         {
             if (p[0] == '.' && p[1] == '.')
             {
@@ -65,7 +77,9 @@ namespace
                 {
                     char after = p[2];
                     if (after == '\0' || after == '/' || after == '\\')
+                    {
                         return true;
+                    }
                 }
             }
         }
@@ -78,7 +92,9 @@ namespace nectar
     bool WriteHiveId(const char* assetPath, const HiveIdData& data)
     {
         if (ContainsPathTraversal(assetPath))
+        {
             return false;
+        }
 
         char pathBuf[1024];
         std::snprintf(pathBuf, sizeof(pathBuf), "%s.hiveid", assetPath);
@@ -89,8 +105,10 @@ namespace nectar
 #else
         f = fopen(pathBuf, "wb");
 #endif
-        if (!f)
+        if (f == nullptr)
+        {
             return false;
+        }
 
         char hexBuf[33];
         AssetIdToHex(data.m_guid, hexBuf);
@@ -103,7 +121,9 @@ namespace nectar
     bool ReadHiveId(const char* assetPath, HiveIdData& data, comb::DefaultAllocator& alloc)
     {
         if (ContainsPathTraversal(assetPath))
+        {
             return false;
+        }
 
         char pathBuf[1024];
         std::snprintf(pathBuf, sizeof(pathBuf), "%s.hiveid", assetPath);
@@ -114,18 +134,22 @@ namespace nectar
 #else
         f = fopen(pathBuf, "rb");
 #endif
-        if (!f)
+        if (f == nullptr)
+        {
             return false;
+        }
 
         char line[256];
         data.m_guid = AssetId::Invalid();
         data.m_type = wax::String{alloc};
 
-        while (std::fgets(line, sizeof(line), f))
+        while (std::fgets(line, sizeof(line), f) != nullptr)
         {
             size_t len = std::strlen(line);
             while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r'))
+            {
                 line[--len] = '\0';
+            }
 
             if (std::strncmp(line, "guid=", 5) == 0)
             {

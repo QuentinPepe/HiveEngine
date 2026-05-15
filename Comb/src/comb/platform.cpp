@@ -47,8 +47,10 @@ namespace comb
 
     void FreePages(void* ptr, size_t size)
     {
-        if (!ptr)
+        if (ptr == nullptr)
+        {
             return;
+        }
 
 #if defined(_WIN32)
         (void)size; // Windows doesn't need size for VirtualFree with MEM_RELEASE

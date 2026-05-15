@@ -14,6 +14,7 @@
 #include <waggle/render/render_frame.h>
 #include <waggle/render/render_module.h>
 #include <waggle/render/render_resource.h>
+#include <waggle/systems/debug_freecam_system.h>
 #include <waggle/systems/editor_camera_system.h>
 #include <waggle/systems/gizmo_render_system.h>
 #include <waggle/systems/mesh_render_system.h>
@@ -49,7 +50,9 @@ namespace
             m_context.m_world = &m_app.GetWorld();
             m_context.m_jobs = config.m_jobs;
             if (config.m_jobs.IsValid())
+            {
                 m_app.SetJobSubmitter(config.m_jobs);
+            }
             m_app.GetWorld().InsertResource(waggle::RuntimeContext{config.m_mode});
 
             terra::SetWindowTitle(m_windowContext, config.m_windowTitle);
@@ -146,7 +149,9 @@ namespace
             m_context.m_window = m_windowContext;
 
             if (!m_config.m_deferWindow)
+            {
                 terra::SetWindowVisible(m_windowContext, true);
+            }
 
             return true;
         }
@@ -263,6 +268,9 @@ namespace
 
         void TickEditorCameras()
         {
+            // Debug freecam runs before the editor camera so that, when active, it
+            // consumes the mouse delta and the editor camera sees zeroed input.
+            waggle::UpdateDebugFreeCam(m_app.GetWorld());
             waggle::UpdateEditorCameras(m_app.GetWorld());
             waggle::UpdateEditorGrid(m_app.GetWorld());
             waggle::UpdateGizmoVisual(m_app.GetWorld());
@@ -387,7 +395,9 @@ namespace
                     TickEditorCameras();
 
                     if (terra::ShouldWindowClose(m_context.m_window))
+                    {
                         break;
+                    }
                 }
                 else if (m_callbacks.m_onPrePoll != nullptr)
                 {
@@ -596,7 +606,9 @@ namespace waggle
     bool CreateWindowAndRenderer(EngineContext& ctx, const char* title, uint32_t width, uint32_t height)
     {
         if (ctx.m_window != nullptr)
+        {
             return true;
+        }
 
         if (!terra::InitSystem())
         {

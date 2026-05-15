@@ -54,7 +54,9 @@ namespace comb
             if (this != &other)
             {
                 for (size_t i = 0; i < m_blockCount; ++i)
+                {
                     delete m_blocks[i];
+                }
 
                 m_blockSize = other.m_blockSize;
                 m_hardCap = other.m_hardCap;
@@ -77,14 +79,18 @@ namespace comb
             for (size_t i = 0; i < m_blockCount; ++i)
             {
                 void* ptr = m_blocks[i]->Allocate(size, alignment, tag);
-                if (ptr)
+                if (ptr != nullptr)
+                {
                     return ptr;
+                }
             }
 
             if (!AddBlock())
             {
-                if (m_oomCallback)
+                if (m_oomCallback != nullptr)
+                {
                     m_oomCallback(size);
+                }
                 return nullptr;
             }
 
@@ -93,8 +99,10 @@ namespace comb
 
         void Deallocate(void* ptr)
         {
-            if (!ptr)
+            if (ptr == nullptr)
+            {
                 return;
+            }
 
             auto* bytePtr = static_cast<std::byte*>(ptr);
             for (size_t i = 0; i < m_blockCount; ++i)
@@ -115,7 +123,9 @@ namespace comb
         {
             size_t total = 0;
             for (size_t i = 0; i < m_blockCount; ++i)
+            {
                 total += m_blocks[i]->GetUsedMemory();
+            }
             return total;
         }
 
@@ -123,7 +133,9 @@ namespace comb
         {
             size_t total = 0;
             for (size_t i = 0; i < m_blockCount; ++i)
+            {
                 total += m_blocks[i]->GetTotalMemory();
+            }
             return total;
         }
 
@@ -141,14 +153,20 @@ namespace comb
         bool AddBlock()
         {
             if (m_blockCount >= kMaxBlocks)
+            {
                 return false;
+            }
 
             size_t currentTotal = 0;
             for (size_t i = 0; i < m_blockCount; ++i)
+            {
                 currentTotal += m_blocks[i]->GetTotalMemory();
+            }
 
             if (currentTotal + m_blockSize > m_hardCap)
+            {
                 return false;
+            }
 
             m_blocks[m_blockCount] = new BuddyAllocator{m_blockSize, m_debugName};
             ++m_blockCount;

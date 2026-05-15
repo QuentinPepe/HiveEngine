@@ -2,6 +2,15 @@
 
 #include <hive/hive_config.h>
 
+#include <brood/launcher/launcher_types.h>
+
+namespace brood::launcher
+{
+    // Available in every mode (editor, game, headless): registers the engine
+    // component types so scene deserialization works regardless of build.
+    void RegisterSceneComponentTypes(LauncherState& state);
+}
+
 #if HIVE_MODE_EDITOR
 
 #include <wax/containers/string.h>
@@ -9,7 +18,6 @@
 
 #include <waggle/engine_runner.h>
 
-#include <brood/launcher/launcher_types.h>
 #include <filesystem>
 #include <launcher/launcher_platform.h>
 
@@ -27,7 +35,6 @@ namespace waggle
 namespace brood::launcher
 {
 
-    void RegisterSceneComponentTypes(LauncherState& state);
     void ResetSceneEditorState(LauncherState& state);
     void ClearWorldEntities(queen::World& world);
     void SpawnEditorBaseCamera(queen::World& world);

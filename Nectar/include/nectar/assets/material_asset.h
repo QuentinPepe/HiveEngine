@@ -28,7 +28,9 @@ namespace nectar
             wax::StringView content{reinterpret_cast<const char*>(data.Data()), data.Size()};
             auto parseResult = HiveParser::Parse(content, alloc);
             if (!parseResult.Success())
+            {
                 return nullptr;
+            }
 
             auto* asset = comb::New<MaterialAsset>(alloc, alloc);
             const auto& doc = parseResult.m_document;
@@ -55,11 +57,15 @@ namespace nectar
                     for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
                     {
                         if (kv.Value().m_type != HiveValue::Type::STRING)
+                        {
                             continue;
+                        }
                         const wax::StringView guid = kv.Value().AsString();
                         const AssetId id = AssetId::FromGuidString(guid.Data(), guid.Size());
                         if (!id.IsValid())
+                        {
                             continue;
+                        }
                         asset->m_data.m_textureBindings.Insert(wax::String{alloc, kv.Key().View()}, id);
                     }
                 }
@@ -68,7 +74,9 @@ namespace nectar
                     for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
                     {
                         if (kv.Value().m_type != HiveValue::Type::BOOL)
+                        {
                             continue;
+                        }
                         asset->m_data.m_featureOverrides.Insert(wax::String{alloc, kv.Key().View()},
                                                                 kv.Value().AsBool());
                     }
@@ -80,8 +88,10 @@ namespace nectar
 
         void Unload(MaterialAsset* asset, comb::DefaultAllocator& alloc) override
         {
-            if (asset)
+            if (asset != nullptr)
+            {
                 comb::Delete(alloc, asset);
+            }
         }
 
         [[nodiscard]] size_t SizeOf(const MaterialAsset*) const override

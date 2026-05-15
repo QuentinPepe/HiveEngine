@@ -10,50 +10,13 @@
 
 namespace queen
 {
-    /**
-     * Dynamic bitset for tracking component presence
-     *
-     * ComponentMask provides O(1) set/clear/test operations and O(n/64) logical
-     * operations where n is the highest bit index. Used by AccessDescriptor for
-     * fast conflict detection between systems.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────┐
-     * │ m_blocks: Vector<uint64_t>                                  │
-     * │   [block0: bits 0-63] [block1: bits 64-127] ...            │
-     * └────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Set/Clear/Test: O(1)
-     * - And/Or/Xor: O(n/64) where n = max bit index
-     * - Any/None/Count: O(n/64)
-     * - Memory: 8 bytes per 64 components
-     *
-     * Use cases:
-     * - Tracking component reads/writes for parallel scheduling
-     * - Archetype matching (which components are present)
-     * - Fast intersection tests for query matching
-     *
-     * Limitations:
-     * - Grows dynamically (may allocate)
-     * - Not thread-safe
-     *
-     * Example:
-     * @code
-     *   ComponentMask mask{alloc};
-     *   mask.Set(TypeIdOf<Position>() % 1024);  // Use modulo for index
-     *   mask.Set(TypeIdOf<Velocity>() % 1024);
-     *
-     *   if (mask.Test(TypeIdOf<Position>() % 1024)) {
-     *       // Has Position
-     *   }
-     *
-     *   // Check for overlap with another mask
-     *   if (mask.Intersects(other_mask)) {
-     *       // Conflict!
-     *   }
-     * @endcode
-     */
+    // Dynamic bitset over uint64_t blocks. Underlies AccessDescriptor conflict detection
+    // and archetype matching; intersection/contains are the hot paths.
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────┐
+    // │ m_blocks: Vector<uint64_t>                                 │
+    // │   [block0: bits 0-63] [block1: bits 64-127] ...            │
+    // └────────────────────────────────────────────────────────────┘
     template <comb::Allocator Allocator> class ComponentMask
     {
     public:
@@ -65,9 +28,7 @@ namespace queen
         {
         }
 
-        /**
-         * Copy constructor - uses the same allocator as other
-         */
+        // Copy ctor reuses other's allocator (masks cannot rebind their allocator).
         ComponentMask(const ComponentMask& other)
             : m_allocator{other.m_allocator}
             , m_blocks{*other.m_allocator}
@@ -79,9 +40,7 @@ namespace queen
             }
         }
 
-        /**
-         * Copy assignment - uses own allocator
-         */
+        // Copy assignment keeps this instance's allocator; only block contents are copied.
         ComponentMask& operator=(const ComponentMask& other)
         {
             if (this != &other)
@@ -112,9 +71,6 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Set a bit at the given index
-         */
         void Set(size_t index)
         {
             size_t block_index = index / BitsPerBlock;
@@ -124,9 +80,6 @@ namespace queen
             m_blocks[block_index] |= (uint64_t{1} << bit_index);
         }
 
-        /**
-         * Clear a bit at the given index
-         */
         void Clear(size_t index)
         {
             size_t block_index = index / BitsPerBlock;
@@ -139,9 +92,6 @@ namespace queen
             m_blocks[block_index] &= ~(uint64_t{1} << bit_index);
         }
 
-        /**
-         * Test if a bit is set
-         */
         [[nodiscard]] bool Test(size_t index) const noexcept
         {
             size_t block_index = index / BitsPerBlock;
@@ -154,9 +104,6 @@ namespace queen
             return (m_blocks[block_index] & (uint64_t{1} << bit_index)) != 0;
         }
 
-        /**
-         * Toggle a bit at the given index
-         */
         void Toggle(size_t index)
         {
             size_t block_index = index / BitsPerBlock;
@@ -166,9 +113,6 @@ namespace queen
             m_blocks[block_index] ^= (uint64_t{1} << bit_index);
         }
 
-        /**
-         * Clear all bits
-         */
         void ClearAll()
         {
             for (size_t i = 0; i < m_blocks.Size(); ++i)
@@ -177,9 +121,7 @@ namespace queen
             }
         }
 
-        /**
-         * Set all bits up to count
-         */
+        // Set bits 0..count-1, leaving higher bits untouched.
         void SetAll(size_t count)
         {
             size_t block_count = (count + BitsPerBlock - 1) / BitsPerBlock;
@@ -206,9 +148,6 @@ namespace queen
             }
         }
 
-        /**
-         * Check if any bit is set
-         */
         [[nodiscard]] bool Any() const noexcept
         {
             for (size_t i = 0; i < m_blocks.Size(); ++i)
@@ -221,17 +160,11 @@ namespace queen
             return false;
         }
 
-        /**
-         * Check if no bits are set
-         */
         [[nodiscard]] bool None() const noexcept
         {
             return !Any();
         }
 
-        /**
-         * Count the number of set bits
-         */
         [[nodiscard]] size_t Count() const noexcept
         {
             size_t count = 0;
@@ -242,9 +175,6 @@ namespace queen
             return count;
         }
 
-        /**
-         * Check if this mask has any overlap with another
-         */
         [[nodiscard]] bool Intersects(const ComponentMask& other) const noexcept
         {
             size_t min_size = m_blocks.Size() < other.m_blocks.Size() ? m_blocks.Size() : other.m_blocks.Size();
@@ -259,9 +189,6 @@ namespace queen
             return false;
         }
 
-        /**
-         * Check if this mask contains all bits from another
-         */
         [[nodiscard]] bool ContainsAll(const ComponentMask& other) const noexcept
         {
             for (size_t i = 0; i < other.m_blocks.Size(); ++i)
@@ -275,17 +202,11 @@ namespace queen
             return true;
         }
 
-        /**
-         * Check if this mask has no overlap with another
-         */
         [[nodiscard]] bool Disjoint(const ComponentMask& other) const noexcept
         {
             return !Intersects(other);
         }
 
-        /**
-         * Bitwise AND with another mask (intersection)
-         */
         ComponentMask& operator&=(const ComponentMask& other)
         {
             size_t min_size = m_blocks.Size() < other.m_blocks.Size() ? m_blocks.Size() : other.m_blocks.Size();
@@ -304,9 +225,6 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Bitwise OR with another mask (union)
-         */
         ComponentMask& operator|=(const ComponentMask& other)
         {
             EnsureCapacity(other.m_blocks.Size());
@@ -319,9 +237,6 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Bitwise XOR with another mask (symmetric difference)
-         */
         ComponentMask& operator^=(const ComponentMask& other)
         {
             EnsureCapacity(other.m_blocks.Size());
@@ -334,9 +249,6 @@ namespace queen
             return *this;
         }
 
-        /**
-         * Bitwise NOT (complement)
-         */
         void Invert()
         {
             for (size_t i = 0; i < m_blocks.Size(); ++i)
@@ -345,9 +257,7 @@ namespace queen
             }
         }
 
-        /**
-         * Equality comparison
-         */
+        // Different block counts compare equal when the extra blocks are all zero.
         [[nodiscard]] bool operator==(const ComponentMask& other) const noexcept
         {
             size_t max_size = m_blocks.Size() > other.m_blocks.Size() ? m_blocks.Size() : other.m_blocks.Size();
@@ -370,9 +280,7 @@ namespace queen
             return !(*this == other);
         }
 
-        /**
-         * Get the index of the first set bit, or size_t(-1) if none
-         */
+        // Returns size_t(-1) if no bit is set.
         [[nodiscard]] size_t FirstSetBit() const noexcept
         {
             for (size_t i = 0; i < m_blocks.Size(); ++i)
@@ -385,9 +293,7 @@ namespace queen
             return static_cast<size_t>(-1);
         }
 
-        /**
-         * Get the index of the last set bit, or size_t(-1) if none
-         */
+        // Returns size_t(-1) if no bit is set.
         [[nodiscard]] size_t LastSetBit() const noexcept
         {
             for (size_t i = m_blocks.Size(); i > 0; --i)
@@ -400,25 +306,17 @@ namespace queen
             return static_cast<size_t>(-1);
         }
 
-        /**
-         * Get the number of blocks allocated
-         */
         [[nodiscard]] size_t BlockCount() const noexcept
         {
             return m_blocks.Size();
         }
 
-        /**
-         * Get the maximum bit index that can be stored without reallocation
-         */
+        // Highest bit index storable without reallocation.
         [[nodiscard]] size_t Capacity() const noexcept
         {
             return m_blocks.Size() * BitsPerBlock;
         }
 
-        /**
-         * Reserve space for at least n bits
-         */
         void Reserve(size_t bit_count)
         {
             size_t block_count = (bit_count + BitsPerBlock - 1) / BitsPerBlock;
@@ -499,9 +397,6 @@ namespace queen
         wax::Vector<uint64_t> m_blocks;
     };
 
-    /**
-     * Create intersection of two masks
-     */
     template <comb::Allocator Allocator>
     [[nodiscard]] ComponentMask<Allocator> operator&(ComponentMask<Allocator> lhs, const ComponentMask<Allocator>& rhs)
     {
@@ -509,9 +404,6 @@ namespace queen
         return lhs;
     }
 
-    /**
-     * Create union of two masks
-     */
     template <comb::Allocator Allocator>
     [[nodiscard]] ComponentMask<Allocator> operator|(ComponentMask<Allocator> lhs, const ComponentMask<Allocator>& rhs)
     {
@@ -519,9 +411,6 @@ namespace queen
         return lhs;
     }
 
-    /**
-     * Create symmetric difference of two masks
-     */
     template <comb::Allocator Allocator>
     [[nodiscard]] ComponentMask<Allocator> operator^(ComponentMask<Allocator> lhs, const ComponentMask<Allocator>& rhs)
     {

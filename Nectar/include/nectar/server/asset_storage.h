@@ -94,14 +94,14 @@ namespace nectar
         {
             for (size_t i = 0; i < m_capacity; ++i)
             {
-                if (m_slots[i].m_alive && m_slots[i].m_asset && m_loader)
+                if (m_slots[i].m_alive && m_slots[i].m_asset != nullptr && m_loader != nullptr)
                 {
                     m_loader->Unload(m_slots[i].m_asset, *m_allocator);
                 }
                 m_slots[i].~Slot();
             }
 
-            if (m_slots && m_allocator)
+            if (m_slots != nullptr && m_allocator != nullptr)
             {
                 m_allocator->Deallocate(m_slots);
             }
@@ -161,17 +161,23 @@ namespace nectar
             Slot& slot = m_slots[handle.m_index];
             hive::Assert(slot.m_alive && slot.m_generation == handle.m_generation, "Stale handle in SetAsset");
             slot.m_asset = asset;
-            if (asset && m_loader)
+            if (asset != nullptr && m_loader != nullptr)
+            {
                 m_bytesUsed += m_loader->SizeOf(asset);
+            }
         }
 
         [[nodiscard]] T* GetAsset(wax::Handle<T> handle) const noexcept
         {
             if (handle.IsNull() || handle.m_index >= m_capacity)
+            {
                 return nullptr;
+            }
             const Slot& slot = m_slots[handle.m_index];
             if (!slot.m_alive || slot.m_generation != handle.m_generation)
+            {
                 return nullptr;
+            }
             return slot.m_asset;
         }
 
@@ -179,12 +185,18 @@ namespace nectar
         [[nodiscard]] T* GetAssetOrPlaceholder(wax::Handle<T> handle) const noexcept
         {
             if (handle.IsNull() || handle.m_index >= m_capacity)
+            {
                 return m_placeholder;
+            }
             const Slot& slot = m_slots[handle.m_index];
             if (!slot.m_alive || slot.m_generation != handle.m_generation)
+            {
                 return m_placeholder;
-            if (slot.m_status == AssetStatus::READY && slot.m_asset)
+            }
+            if (slot.m_status == AssetStatus::READY && slot.m_asset != nullptr)
+            {
                 return slot.m_asset;
+            }
             return m_placeholder;
         }
 
@@ -206,14 +218,18 @@ namespace nectar
         uint32_t GetRefCount(uint32_t index) const noexcept override
         {
             if (index >= m_capacity || !m_slots[index].m_alive)
+            {
                 return 0;
+            }
             return m_slots[index].m_refCount;
         }
 
         AssetStatus GetStatus(uint32_t index) const noexcept override
         {
             if (index >= m_capacity || !m_slots[index].m_alive)
+            {
                 return AssetStatus::NOT_LOADED;
+            }
             return m_slots[index].m_status;
         }
 
@@ -224,15 +240,21 @@ namespace nectar
             m_slots[index].m_status = status;
 
             if (status == AssetStatus::READY && old != AssetStatus::READY)
+            {
                 EmitEvent(AssetEventKind::LOADED, index, m_slots[index].m_generation);
+            }
             else if (status == AssetStatus::FAILED && old != AssetStatus::FAILED)
+            {
                 EmitEvent(AssetEventKind::FAILED, index, m_slots[index].m_generation);
+            }
         }
 
         const AssetErrorInfo* GetError(uint32_t index) const noexcept override
         {
             if (index >= m_capacity || !m_slots[index].m_alive)
+            {
                 return nullptr;
+            }
             return &m_slots[index].m_error;
         }
 
@@ -245,25 +267,33 @@ namespace nectar
         bool IsHandleValid(uint32_t index, uint32_t generation) const noexcept override
         {
             if (index >= m_capacity)
+            {
                 return false;
+            }
             return m_slots[index].m_alive && m_slots[index].m_generation == generation;
         }
 
         void UnloadSlot(uint32_t index, uint32_t generation) noexcept override
         {
             if (index >= m_capacity)
+            {
                 return;
+            }
             Slot& slot = m_slots[index];
             if (!slot.m_alive || slot.m_generation != generation)
+            {
                 return;
+            }
 
             EmitEvent(AssetEventKind::UNLOADED, index, generation);
 
-            if (slot.m_asset && m_loader)
+            if (slot.m_asset != nullptr && m_loader != nullptr)
             {
                 size_t sz = m_loader->SizeOf(slot.m_asset);
                 if (sz <= m_bytesUsed)
+                {
                     m_bytesUsed -= sz;
+                }
                 m_loader->Unload(slot.m_asset, *m_allocator);
             }
 
@@ -289,7 +319,9 @@ namespace nectar
             {
                 Slot& slot = m_slots[i];
                 if (!slot.m_alive)
+                {
                     continue;
+                }
 
                 // Reset countdown if asset got re-referenced
                 if (slot.m_refCount > 0 && slot.m_gcCountdown > 0)
@@ -299,9 +331,13 @@ namespace nectar
                 }
 
                 if (slot.m_refCount != 0 || slot.m_status != AssetStatus::READY)
+                {
                     continue;
+                }
                 if (slot.m_persistent)
+                {
                     continue;
+                }
 
                 // Over budget → immediate unload (no grace period)
                 if (overBudget)
@@ -341,13 +377,19 @@ namespace nectar
                           comb::DefaultAllocator& alloc) noexcept override
         {
             if (index >= m_capacity || !m_slots[index].m_alive || m_slots[index].m_generation != generation)
+            {
                 return false;
-            if (!m_loader)
+            }
+            if (m_loader == nullptr)
+            {
                 return false;
+            }
 
             T* asset = m_loader->Load(data, alloc);
-            if (!asset)
+            if (asset == nullptr)
+            {
                 return false;
+            }
 
             m_slots[index].m_asset = asset;
             m_bytesUsed += m_loader->SizeOf(asset);
@@ -370,7 +412,9 @@ namespace nectar
             size_t count = m_eventQueue.Size() < maxCount ? m_eventQueue.Size() : maxCount;
             auto* dst = static_cast<AssetEvent<T>*>(outBuffer);
             for (size_t i = 0; i < count; ++i)
+            {
                 dst[i] = m_eventQueue[i];
+            }
 
             // Remove drained events (shift remainder)
             if (count == m_eventQueue.Size())
@@ -381,7 +425,9 @@ namespace nectar
             {
                 wax::Vector<AssetEvent<T>> remaining{*m_allocator};
                 for (size_t i = count; i < m_eventQueue.Size(); ++i)
+                {
                     remaining.PushBack(m_eventQueue[i]);
+                }
                 m_eventQueue = static_cast<wax::Vector<AssetEvent<T>>&&>(remaining);
             }
 
@@ -393,7 +439,9 @@ namespace nectar
         void SetPersistent(uint32_t index, bool persistent) noexcept override
         {
             if (index < m_capacity && m_slots[index].m_alive)
+            {
                 m_slots[index].m_persistent = persistent;
+            }
         }
 
         size_t BytesUsed() const noexcept override
@@ -415,23 +463,33 @@ namespace nectar
         bool ReloadAsset(wax::Handle<T> handle, wax::ByteSpan data)
         {
             if (handle.IsNull() || handle.m_index >= m_capacity)
+            {
                 return false;
+            }
             Slot& slot = m_slots[handle.m_index];
             if (!slot.m_alive || slot.m_generation != handle.m_generation)
+            {
                 return false;
-            if (!m_loader)
+            }
+            if (m_loader == nullptr)
+            {
                 return false;
+            }
 
             T* newAsset = m_loader->Load(data, *m_allocator);
-            if (!newAsset)
+            if (newAsset == nullptr)
+            {
                 return false;
+            }
 
             // Unload old
-            if (slot.m_asset)
+            if (slot.m_asset != nullptr)
             {
                 size_t oldSz = m_loader->SizeOf(slot.m_asset);
                 if (oldSz <= m_bytesUsed)
+                {
                     m_bytesUsed -= oldSz;
+                }
                 m_loader->Unload(slot.m_asset, *m_allocator);
             }
 

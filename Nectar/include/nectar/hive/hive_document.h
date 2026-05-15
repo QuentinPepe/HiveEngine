@@ -47,14 +47,14 @@ namespace nectar
         {
             wax::String secKey{*m_alloc, section};
             auto* sec = m_sections.Find(secKey);
-            if (!sec)
+            if (sec == nullptr)
             {
                 m_sections.Insert(wax::String{*m_alloc, section}, SectionMap{*m_alloc, 8});
                 sec = m_sections.Find(secKey);
             }
             wax::String valKey{*m_alloc, key};
             auto* existing = sec->Find(valKey);
-            if (existing)
+            if (existing != nullptr)
             {
                 *existing = static_cast<HiveValue&&>(value);
             }
@@ -68,8 +68,10 @@ namespace nectar
         {
             wax::String secKey{*m_alloc, section};
             auto* sec = m_sections.Find(secKey);
-            if (!sec)
+            if (sec == nullptr)
+            {
                 return nullptr;
+            }
             wax::String valKey{*m_alloc, key};
             return sec->Find(valKey);
         }
@@ -78,8 +80,10 @@ namespace nectar
         {
             wax::String secKey{*m_alloc, section};
             auto* sec = m_sections.Find(secKey);
-            if (!sec)
+            if (sec == nullptr)
+            {
                 return nullptr;
+            }
             wax::String valKey{*m_alloc, key};
             return sec->Find(valKey);
         }
@@ -90,44 +94,58 @@ namespace nectar
                                                 wax::StringView fallback = {}) const
         {
             auto* v = GetValue(section, key);
-            if (!v || v->m_type != HiveValue::Type::STRING)
+            if (v == nullptr || v->m_type != HiveValue::Type::STRING)
+            {
                 return fallback;
+            }
             return v->AsString();
         }
 
         [[nodiscard]] bool GetBool(wax::StringView section, wax::StringView key, bool fallback = false) const
         {
             auto* v = GetValue(section, key);
-            if (!v || v->m_type != HiveValue::Type::BOOL)
+            if (v == nullptr || v->m_type != HiveValue::Type::BOOL)
+            {
                 return fallback;
+            }
             return v->AsBool();
         }
 
         [[nodiscard]] int64_t GetInt(wax::StringView section, wax::StringView key, int64_t fallback = 0) const
         {
             auto* v = GetValue(section, key);
-            if (!v || v->m_type != HiveValue::Type::INT)
+            if (v == nullptr || v->m_type != HiveValue::Type::INT)
+            {
                 return fallback;
+            }
             return v->AsInt();
         }
 
         [[nodiscard]] double GetFloat(wax::StringView section, wax::StringView key, double fallback = 0.0) const
         {
             auto* v = GetValue(section, key);
-            if (!v)
+            if (v == nullptr)
+            {
                 return fallback;
+            }
             if (v->m_type == HiveValue::Type::FLOAT)
+            {
                 return v->AsFloat();
+            }
             if (v->m_type == HiveValue::Type::INT)
+            {
                 return static_cast<double>(v->AsInt());
+            }
             return fallback;
         }
 
         [[nodiscard]] const wax::Vector<double>* GetFloatArray(wax::StringView section, wax::StringView key) const
         {
             auto* v = GetValue(section, key);
-            if (!v || v->m_type != HiveValue::Type::FLOAT_ARRAY)
+            if (v == nullptr || v->m_type != HiveValue::Type::FLOAT_ARRAY)
+            {
                 return nullptr;
+            }
             return &v->AsFloatArray();
         }
 

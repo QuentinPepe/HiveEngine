@@ -17,10 +17,21 @@
 
 namespace propolis
 {
+    static bool IsExecutionEnabled(queen::World& world) noexcept
+    {
+        const auto* gate = world.Resource<ScriptExecutionGate>();
+        return gate != nullptr && gate->m_enabled;
+    }
+
     static void InitSystem(queen::World& world)
     {
+        if (!IsExecutionEnabled(world))
+        {
+            return;
+        }
+
         auto* registry = world.Resource<ScriptRegistry>();
-        if (!registry)
+        if (registry == nullptr)
         {
             return;
         }
@@ -57,9 +68,14 @@ namespace propolis
 
     static void TickSystem(queen::World& world)
     {
+        if (!IsExecutionEnabled(world))
+        {
+            return;
+        }
+
         auto* registry = world.Resource<ScriptRegistry>();
         auto* time = world.Resource<ScriptTime>();
-        if (!registry || !time)
+        if (registry == nullptr || time == nullptr)
         {
             return;
         }
@@ -123,21 +139,21 @@ namespace propolis
             });
     }
 
-    void PrepareScriptReload(queen::World& world)
+    void DetachAllScripts(queen::World& world)
     {
         auto* registry = world.Resource<ScriptRegistry>();
 
         auto query = world.Query<queen::Write<PropolisScript>>();
         query.EachWithEntity([&](queen::Entity entity, PropolisScript& script) {
-            if (!script.m_state)
+            if (script.m_state == nullptr)
             {
                 return;
             }
 
-            if (registry)
+            if (registry != nullptr)
             {
                 const ScriptEntry* entry = registry->FindByHash(script.m_nameHash);
-                if (entry)
+                if (entry != nullptr)
                 {
                     ScriptInstance inst{entry, script.m_state};
                     DetachScript(inst, entity, world);
@@ -147,13 +163,20 @@ namespace propolis
             world.GetComponentAllocator().Deallocate(script.m_state);
             script.m_state = nullptr;
         });
+    }
 
-        if (registry)
+    void PrepareScriptReload(queen::World& world)
+    {
+        DetachAllScripts(world);
+
+        auto* registry = world.Resource<ScriptRegistry>();
+        if (registry != nullptr)
         {
             registry->Clear();
         }
 
-        if (auto* fnRegistry = world.Resource<FunctionRegistry>())
+        auto* fnRegistry = world.Resource<FunctionRegistry>();
+        if (fnRegistry != nullptr)
         {
             fnRegistry->Clear();
         }

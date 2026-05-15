@@ -55,7 +55,9 @@ namespace hive
 
         int fd = ::open(path, O_RDONLY | O_CLOEXEC);
         if (fd < 0)
+        {
             return false;
+        }
 
         struct stat st{};
         if (::fstat(fd, &st) != 0)
@@ -96,15 +98,21 @@ namespace hive
     void FileMapping::Close() noexcept
     {
         if (m_fd < 0 && m_data == nullptr)
+        {
             return;
+        }
 
         const size_t releasedSize = m_size;
         const bool wasMapped = m_data != nullptr;
 
-        if (m_data && m_size > 0)
+        if (m_data != nullptr && m_size > 0)
+        {
             ::munmap(const_cast<std::byte*>(m_data), m_size);
+        }
         if (m_fd >= 0)
+        {
             ::close(m_fd);
+        }
 
         m_data = nullptr;
         m_size = 0;

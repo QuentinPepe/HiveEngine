@@ -12,51 +12,16 @@
 
 namespace queen
 {
-    /**
-     * Component serialization using reflection data
-     *
-     * Provides serialize/deserialize functions that use ComponentReflection
-     * to read/write component fields. Supports all primitive types and
-     * nested reflectable structs.
-     *
-     * Binary format per component:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ For each field (in registration order):                       │
-     * │   - Raw bytes (field.size bytes)                              │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Note: Field names are NOT serialized - layout must match exactly.
-     * Use versioning at a higher level if schema changes are needed.
-     *
-     * Performance characteristics:
-     * - Serialize: O(n) where n = field count
-     * - Deserialize: O(n) where n = field count
-     * - Memory: No allocations (writes to provided writer/reader)
-     *
-     * Limitations:
-     * - No support for variable-length data (strings, vectors)
-     * - Schema must match exactly between serialize/deserialize
-     * - Nested Reflectable types must be registered
-     *
-     * Example:
-     * @code
-     *   Position pos{1.0f, 2.0f, 3.0f};
-     *   auto reflection = GetReflectionData<Position>();
-     *
-     *   // Serialize
-     *   BinaryWriter writer{allocator};
-     *   SerializeComponent(&pos, reflection, writer);
-     *
-     *   // Deserialize
-     *   Position loaded{};
-     *   BinaryReader reader{writer.View()};
-     *   DeserializeComponent(&loaded, reflection, reader);
-     * @endcode
-     */
+    // Reflection-driven binary (de)serialization. Field names are NOT written:
+    // layout must match exactly between writer and reader. Handle schema
+    // evolution at a higher layer (e.g. World JSON format).
+    //
+    // Binary format per component:
+    // ┌────────────────────────────────────────────────────────────────┐
+    // │ For each field (in registration order):                       │
+    // │   - Raw bytes (field.size bytes)                              │
+    // └────────────────────────────────────────────────────────────────┘
 
-    /**
-     * Serialize a single field to binary
-     */
     inline void SerializeField(const void* component, const FieldInfo& field, wax::BinaryWriter& writer) noexcept
     {
         const auto* fieldPtr = static_cast<const std::byte*>(component) + field.m_offset;
@@ -166,9 +131,6 @@ namespace queen
         }
     }
 
-    /**
-     * Deserialize a single field from binary
-     */
     inline void DeserializeField(void* component, const FieldInfo& field, wax::BinaryReader& reader) noexcept
     {
         auto* fieldPtr = static_cast<std::byte*>(component) + field.m_offset;
@@ -278,13 +240,6 @@ namespace queen
         }
     }
 
-    /**
-     * Serialize a component using its reflection data
-     *
-     * @param component Pointer to the component to serialize
-     * @param reflection Reflection data describing the component's fields
-     * @param writer BinaryWriter to write to
-     */
     inline void SerializeComponent(const void* component, const ComponentReflection& reflection,
                                    wax::BinaryWriter& writer) noexcept
     {
@@ -294,13 +249,6 @@ namespace queen
         }
     }
 
-    /**
-     * Deserialize a component using its reflection data
-     *
-     * @param component Pointer to the component to deserialize into
-     * @param reflection Reflection data describing the component's fields
-     * @param reader BinaryReader to read from
-     */
     inline void DeserializeComponent(void* component, const ComponentReflection& reflection,
                                      wax::BinaryReader& reader) noexcept
     {
@@ -310,18 +258,12 @@ namespace queen
         }
     }
 
-    /**
-     * Serialize a reflectable component (type-safe version)
-     */
     template <Reflectable T> void Serialize(const T& component, wax::BinaryWriter& writer) noexcept
     {
         auto reflection = GetReflectionData<T>();
         SerializeComponent(&component, reflection, writer);
     }
 
-    /**
-     * Deserialize a reflectable component (type-safe version)
-     */
     template <Reflectable T> void Deserialize(T& component, wax::BinaryReader& reader) noexcept
     {
         auto reflection = GetReflectionData<T>();

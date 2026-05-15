@@ -10,17 +10,26 @@ namespace forge
     void NotifyComponentChanged(queen::World& world, queen::Entity entity, queen::TypeId typeId)
     {
         if (typeId != queen::TypeIdOf<waggle::Transform>())
+        {
             return;
+        }
         auto* version = world.Get<waggle::TransformVersion>(entity);
         if (version == nullptr)
+        {
             return;
+        }
         // The inspector runs from Qt's event loop, between sim ticks. We can't predict
         // whether time->m_tick has already been advanced for the next pass, so bump one
         // ahead — guarantees the dirty equality fires on the next transform_system pass.
-        if (auto* time = world.Resource<waggle::Time>(); time != nullptr)
+        auto* time = world.Resource<waggle::Time>();
+        if (time != nullptr)
+        {
             version->m_lastModified = time->m_tick + 1;
+        }
         else
+        {
             ++version->m_lastModified;
+        }
     }
 
     void CommitIfChanged(SnapshotState& state, EditorUndoManager& undo, queen::World& world,

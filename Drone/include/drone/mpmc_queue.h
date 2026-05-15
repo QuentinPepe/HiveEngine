@@ -9,42 +9,19 @@
 
 namespace drone
 {
-    /**
-     * Lock-free bounded Multi-Producer Multi-Consumer (MPMC) queue
-     *
-     * Provides a thread-safe queue where any thread can push or pop.
-     * Uses a circular buffer with sequence numbers for lock-free operation.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ m_buffer: Cell* - circular buffer of cells                     │
-     * │ m_capacity: size_t - buffer size (must be power of 2)          │
-     * │ m_mask: size_t - m_capacity - 1 for efficient modulo           │
-     * │ m_head: atomic<size_t> - consumer position                      │
-     * │ m_tail: atomic<size_t> - producer position                      │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Each cell contains:
-     * - sequence: atomic<size_t> - for synchronization
-     * - data: T - the stored item
-     *
-     * Algorithm (Dmitry Vyukov's bounded MPMC queue):
-     * - Producers increment tail, write data, then update sequence
-     * - Consumers wait for sequence, read data, then increment head
-     *
-     * Performance characteristics:
-     * - Push: O(1) - CAS on tail
-     * - Pop: O(1) - CAS on head
-     * - Both operations are wait-free in the uncontended case
-     *
-     * Limitations:
-     * - Fixed capacity (cannot grow)
-     * - Returns false on full queue (non-blocking)
-     * - Capacity must be power of 2
-     *
-     * @tparam T Element type
-     * @tparam Allocator Memory allocator type
-     */
+    // Lock-free bounded MPMC queue (Dmitry Vyukov's algorithm). Capacity is
+    // rounded up to a power of two so position-to-slot wrap is a mask. Push
+    // and pop are wait-free under no contention; Push returns false when full
+    // rather than blocking.
+    //
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────────┐
+    // │ m_buffer: Cell* - circular buffer of cells                     │
+    // │ m_capacity: size_t - buffer size (must be power of 2)          │
+    // │ m_mask: size_t - m_capacity - 1 for efficient modulo           │
+    // │ m_head: atomic<size_t> - consumer position                      │
+    // │ m_tail: atomic<size_t> - producer position                      │
+    // └────────────────────────────────────────────────────────────────┘
     template <typename T, comb::Allocator Allocator> class MPMCQueue
     {
     public:

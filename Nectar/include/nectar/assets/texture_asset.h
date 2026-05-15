@@ -39,16 +39,22 @@ namespace nectar
         [[nodiscard]] TextureAsset* Load(wax::ByteSpan data, comb::DefaultAllocator& alloc) override
         {
             if (data.Size() < sizeof(NtexHeader))
+            {
                 return nullptr;
+            }
 
             NtexHeader hdr{};
             std::memcpy(&hdr, data.Data(), sizeof(NtexHeader));
             if (hdr.m_magic != kNtexMagic)
+            {
                 return nullptr;
+            }
 
             auto* blob = static_cast<uint8_t*>(alloc.Allocate(data.Size(), alignof(std::max_align_t)));
-            if (!blob)
+            if (blob == nullptr)
+            {
                 return nullptr;
+            }
 
             auto* asset = comb::New<TextureAsset>(alloc);
             asset->header = hdr;
@@ -61,17 +67,19 @@ namespace nectar
 
         void Unload(TextureAsset* asset, comb::DefaultAllocator& alloc) override
         {
-            if (asset)
+            if (asset != nullptr)
             {
-                if (asset->data)
+                if (asset->data != nullptr)
+                {
                     alloc.Deallocate(asset->data);
+                }
                 comb::Delete(alloc, asset);
             }
         }
 
         [[nodiscard]] size_t SizeOf(const TextureAsset* asset) const override
         {
-            return sizeof(TextureAsset) + (asset ? asset->data_size : 0);
+            return sizeof(TextureAsset) + (asset != nullptr ? asset->data_size : 0);
         }
     };
 

@@ -6,31 +6,8 @@
 
 namespace queen
 {
-    /**
-     * Compile-time type identifier
-     *
-     * Generates unique 64-bit identifiers for types at compile-time using
-     * FNV-1a hash of the type name. Zero runtime overhead for type lookups.
-     *
-     * Performance characteristics:
-     * - TypeId generation: Compile-time (zero runtime cost)
-     * - TypeId comparison: O(1) - single integer compare
-     * - Hash collisions: Extremely rare with 64-bit FNV-1a
-     *
-     * Limitations:
-     * - Relies on compiler-specific __PRETTY_FUNCTION__ or __FUNCSIG__
-     * - Different compilers may produce different hashes for same type
-     * - Not stable across compiler versions (recompilation required)
-     *
-     * Example:
-     * @code
-     *   constexpr TypeId posId = queen::TypeIdOf<Position>();
-     *   constexpr TypeId velId = queen::TypeIdOf<Velocity>();
-     *   static_assert(posId != velId);
-     *
-     *   if (TypeIdOf<T>() == posId) { ... }
-     * @endcode
-     */
+    // 64-bit type identifier derived from FNV-1a over the compiler-specific pretty function name.
+    // Compile-time only; not stable across compilers or compiler versions.
     using TypeId = uint64_t;
 
     constexpr TypeId kInvalidTypeId = 0;
@@ -91,17 +68,12 @@ namespace queen
         }
     } // namespace detail
 
-    /**
-     * Get compile-time type ID for type T
-     */
     template <typename T> consteval TypeId TypeIdOf() noexcept
     {
         return detail::Fnv1aHash(detail::RawTypeName<T>());
     }
 
-    /**
-     * Get human-readable type name for debugging
-     */
+    // Human-readable type name extracted from the pretty function string, for debugging only.
     template <typename T> constexpr std::string_view TypeNameOf() noexcept
     {
         return detail::TypeName<T>();

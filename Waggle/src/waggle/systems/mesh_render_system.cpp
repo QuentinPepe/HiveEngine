@@ -22,6 +22,7 @@
 #include <waggle/project/project_manager.h>
 #include <waggle/render/render_frame.h>
 #include <waggle/render/render_module.h>
+#include <waggle/systems/debug_freecam_system.h>
 #include <waggle/systems/mesh_render_system.h>
 #include <waggle/time.h>
 
@@ -106,7 +107,18 @@ namespace waggle
 
         const Camera* activeCamera = nullptr;
         hive::math::Mat4 cameraWorld = hive::math::Mat4::Identity();
-        if (!ResolveActiveCamera(world, playState, &cameraWorld, &activeCamera))
+        Camera debugCamera{};
+
+        const auto* debugFreeCam = world.Resource<DebugFreeCam>();
+        if (debugFreeCam != nullptr && debugFreeCam->m_active)
+        {
+            cameraWorld = debugFreeCam->m_worldMatrix;
+            debugCamera.m_fovRad = debugFreeCam->m_fovRad;
+            debugCamera.m_zNear = debugFreeCam->m_zNear;
+            debugCamera.m_zFar = debugFreeCam->m_zFar;
+            activeCamera = &debugCamera;
+        }
+        else if (!ResolveActiveCamera(world, playState, &cameraWorld, &activeCamera))
         {
             return;
         }
@@ -147,8 +159,8 @@ namespace waggle
 
         nectar::VirtualFilesystem* vfs = nullptr;
         ProjectManager* projectMgr = nullptr;
-        if (auto* projectCtx = world.Resource<ProjectContext>();
-            projectCtx != nullptr && projectCtx->m_manager != nullptr)
+        auto* projectCtx = world.Resource<ProjectContext>();
+        if (projectCtx != nullptr && projectCtx->m_manager != nullptr)
         {
             projectMgr = projectCtx->m_manager;
             vfs = &projectMgr->VFS();
@@ -156,7 +168,9 @@ namespace waggle
             wax::Vector<wax::String> changedMaterials{comb::GetDefaultAllocator()};
             projectMgr->ConsumeChangedMaterials(changedMaterials);
             for (size_t i = 0; i < changedMaterials.Size(); ++i)
+            {
                 renderModule.InvalidateMaterial(changedMaterials[i].View());
+            }
         }
 
         swarm::Material* defaultMaterial = renderModule.GetDefaultMaterial(projectMgr);

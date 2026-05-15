@@ -43,7 +43,9 @@ namespace nectar
     void NativeFileWatcher::Tick()
     {
         if (!m_running.load(std::memory_order_acquire))
+        {
             return;
+        }
         PlatformTick();
     }
 
@@ -214,7 +216,9 @@ namespace nectar
             std::error_code ec;
             auto it = std::filesystem::recursive_directory_iterator(std::filesystem::path{m_watchedDirs[i].CStr()}, ec);
             if (ec)
+            {
                 continue;
+            }
 
             for (auto dirIt = std::filesystem::begin(it); dirIt != std::filesystem::end(it); ++dirIt)
             {
@@ -222,19 +226,27 @@ namespace nectar
                 {
                     auto dirName = dirIt->path().filename().string();
                     if (!dirName.empty() && dirName[0] == '.')
+                    {
                         dirIt.disable_recursion_pending();
+                    }
                     continue;
                 }
 
                 if (!dirIt->is_regular_file())
+                {
                     continue;
+                }
 
                 auto fsPath = dirIt->path().string();
                 wax::String pathStr{*m_alloc};
                 pathStr.Append(fsPath.c_str(), fsPath.size());
                 for (size_t ci = 0; ci < pathStr.Size(); ++ci)
+                {
                     if (pathStr[ci] == '\\')
+                    {
                         pathStr[ci] = '/';
+                    }
+                }
 
                 auto fileTime = std::filesystem::last_write_time(dirIt->path(), ec);
                 int64_t mtime =
@@ -287,7 +299,9 @@ namespace nectar
         }
 
         for (size_t i = 0; i < toRemove.Size(); ++i)
+        {
             m_knownFiles.Remove(toRemove[i]);
+        }
     }
 
     IFileWatcher* CreateFileWatcher(comb::DefaultAllocator& alloc)

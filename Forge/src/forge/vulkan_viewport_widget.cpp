@@ -45,6 +45,10 @@ namespace forge
             {VK_LCONTROL, terra::Key::LEFT_CONTROL}, {VK_RCONTROL, terra::Key::RIGHT_CONTROL},
             {VK_LMENU, terra::Key::LEFT_ALT}, {VK_RMENU, terra::Key::RIGHT_ALT},
             {VK_ESCAPE, terra::Key::ESCAPE},
+            {VK_F1, terra::Key::F1},   {VK_F2, terra::Key::F2},   {VK_F3, terra::Key::F3},
+            {VK_F4, terra::Key::F4},   {VK_F5, terra::Key::F5},   {VK_F6, terra::Key::F6},
+            {VK_F7, terra::Key::F7},   {VK_F8, terra::Key::F8},   {VK_F9, terra::Key::F9},
+            {VK_F10, terra::Key::F10}, {VK_F11, terra::Key::F11}, {VK_F12, terra::Key::F12},
         };
 
         bool IsTextInputFocused()

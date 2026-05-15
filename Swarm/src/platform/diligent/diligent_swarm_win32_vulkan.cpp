@@ -30,7 +30,7 @@ namespace swarm
             return false;
         }
 
-        if (window)
+        if (window != nullptr)
         {
             auto* factory = Diligent::GetEngineFactoryVk();
             Diligent::SwapChainDesc swapChainDesc;

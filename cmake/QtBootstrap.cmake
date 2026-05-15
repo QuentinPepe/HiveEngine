@@ -6,6 +6,13 @@ set(_hive_qt_build_config "${CMAKE_BUILD_TYPE}")
 if(NOT _hive_qt_build_config)
     set(_hive_qt_build_config "Debug")
 endif()
+
+# Map every Hive buildConfig (Debug/Release/Profile/Retail) to the closest CMake
+# config that produces a stdlib with matching _ITERATOR_DEBUG_LEVEL. Only Debug and
+# Release need their own prebuilt Qt; Profile and Retail reuse the Release one.
+if(NOT _hive_qt_build_config STREQUAL "Debug")
+    set(_hive_qt_build_config "Release")
+endif()
 string(TOLOWER "${_hive_qt_build_config}" _hive_qt_config_suffix)
 
 set(_hive_qt_package_dir "${HIVE_QT_PACKAGE_DIR}")
@@ -25,10 +32,30 @@ function(hive_qt_find_prebuilt PACKAGE_DIR OUT_FOUND)
         set(_prev_global_val "${CMAKE_FIND_PACKAGE_TARGETS_GLOBAL}")
     endif()
 
+    set(_hive_qt_expected_qt6_dir "${PACKAGE_DIR}/lib/cmake/Qt6")
+    # If any Qt6*_DIR is cached at a different config (e.g. qt-debug while the build
+    # switched to Release), find_package's transitive find_dependency calls reuse those
+    # stale paths and pull Debug static-plugin objects into a Release link, producing
+    # _ITERATOR_DEBUG_LEVEL mismatches. Invalidate every cached Qt6*_DIR that does not
+    # already live under the expected install prefix.
+    get_cmake_property(_hive_qt_all_cache_vars CACHE_VARIABLES)
+    foreach(_hive_qt_cache_var IN LISTS _hive_qt_all_cache_vars)
+        if(_hive_qt_cache_var MATCHES "^Qt6[A-Za-z0-9_]*_DIR$")
+            set(_hive_qt_cache_value "${${_hive_qt_cache_var}}")
+            if(NOT _hive_qt_cache_value MATCHES "^${PACKAGE_DIR}/")
+                unset(${_hive_qt_cache_var} CACHE)
+            endif()
+        endif()
+    endforeach()
+    if(EXISTS "${_hive_qt_expected_qt6_dir}/Qt6Config.cmake")
+        set(Qt6_DIR "${_hive_qt_expected_qt6_dir}" CACHE PATH "Qt6 config dir" FORCE)
+    endif()
+
     set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
     list(PREPEND CMAKE_PREFIX_PATH "${PACKAGE_DIR}")
     find_package(Qt6 QUIET COMPONENTS Widgets
         PATHS "${PACKAGE_DIR}"
+        NO_DEFAULT_PATH
     )
 
     if(_prev_global)
@@ -44,7 +71,7 @@ function(hive_qt_find_prebuilt PACKAGE_DIR OUT_FOUND)
     endif()
 endfunction()
 
-function(hive_qt_bootstrap SOURCE_DIR BUILD_DIR INSTALL_DIR)
+function(hive_qt_bootstrap SOURCE_DIR BUILD_DIR INSTALL_DIR BUILD_CONFIG)
     if(NOT EXISTS "${SOURCE_DIR}/CMakeLists.txt")
         message(FATAL_ERROR
             "Forge: qtbase submodule not found at ${SOURCE_DIR}.\n"
@@ -89,7 +116,7 @@ function(hive_qt_bootstrap SOURCE_DIR BUILD_DIR INSTALL_DIR)
         -B "${BUILD_DIR}"
         -G "${CMAKE_GENERATOR}"
         "-DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}"
-        "-DCMAKE_BUILD_TYPE=${_hive_qt_build_config}"
+        "-DCMAKE_BUILD_TYPE=${BUILD_CONFIG}"
         "-DBUILD_SHARED_LIBS=OFF"
         "-DQT_BUILD_EXAMPLES=OFF"
         "-DQT_BUILD_TESTS=OFF"
@@ -172,7 +199,7 @@ function(hive_qt_bootstrap SOURCE_DIR BUILD_DIR INSTALL_DIR)
     endif()
 
     execute_process(
-        COMMAND "${_qt_cmake}" --build "${BUILD_DIR}" --config ${_hive_qt_build_config}
+        COMMAND "${_qt_cmake}" --build "${BUILD_DIR}" --config ${BUILD_CONFIG}
         RESULT_VARIABLE _qt_build_result
     )
     if(NOT _qt_build_result EQUAL 0)
@@ -180,7 +207,7 @@ function(hive_qt_bootstrap SOURCE_DIR BUILD_DIR INSTALL_DIR)
     endif()
 
     execute_process(
-        COMMAND "${_qt_cmake}" --install "${BUILD_DIR}" --config ${_hive_qt_build_config}
+        COMMAND "${_qt_cmake}" --install "${BUILD_DIR}" --config ${BUILD_CONFIG}
         RESULT_VARIABLE _qt_install_result
     )
     if(NOT _qt_install_result EQUAL 0)
@@ -188,6 +215,24 @@ function(hive_qt_bootstrap SOURCE_DIR BUILD_DIR INSTALL_DIR)
     endif()
 
     message(STATUS "Forge: Qt6 built and installed to ${INSTALL_DIR}")
+endfunction()
+
+function(_hive_qt_ensure_config BUILD_CONFIG)
+    string(TOLOWER "${BUILD_CONFIG}" _suffix)
+    set(_install_dir "${_hive_qt_root_dir}/out/build/qt-${_suffix}/install")
+    set(_build_dir "${_hive_qt_root_dir}/out/build/qt-${_suffix}")
+    if(EXISTS "${_install_dir}/lib/cmake/Qt6/Qt6Config.cmake")
+        return()
+    endif()
+    if(NOT HIVE_BOOTSTRAP_QT)
+        return()
+    endif()
+    hive_qt_bootstrap(
+        "${_hive_qt_source_dir}"
+        "${_build_dir}"
+        "${_install_dir}"
+        "${BUILD_CONFIG}"
+    )
 endfunction()
 
 # ---- Resolve Qt6 ----
@@ -199,8 +244,21 @@ if(NOT _hive_qt_found AND HIVE_BOOTSTRAP_QT)
         "${_hive_qt_source_dir}"
         "${_hive_qt_build_dir}"
         "${_hive_qt_package_dir}"
+        "${_hive_qt_build_config}"
     )
     hive_qt_find_prebuilt("${_hive_qt_package_dir}" _hive_qt_found)
+endif()
+
+# Best-effort secondary bootstrap: build the opposite canonical config so future
+# preset switches between Debug and Release do not trigger another 15-20 minute Qt
+# build. Failures here are non-fatal and only logged.
+if(_hive_qt_found AND HIVE_BOOTSTRAP_QT AND NOT HIVE_QT_SKIP_SECONDARY_BOOTSTRAP)
+    if(_hive_qt_build_config STREQUAL "Debug")
+        set(_hive_qt_secondary_config "Release")
+    else()
+        set(_hive_qt_secondary_config "Debug")
+    endif()
+    _hive_qt_ensure_config("${_hive_qt_secondary_config}")
 endif()
 
 if(_hive_qt_found)

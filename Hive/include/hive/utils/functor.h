@@ -127,7 +127,7 @@ namespace hive
     public:
         [[nodiscard]] bool IsEmpty() const noexcept
         {
-            return !m_callable;
+            return m_callable == nullptr;
         }
 
         Functor() = default;
@@ -162,8 +162,10 @@ namespace hive
         {
             if (this != &other)
             {
-                if (m_callable)
+                if (m_callable != nullptr)
+                {
                     m_callable->~Callable();
+                }
                 m_callable = other.IsEmpty() ? nullptr : other.m_callable->Clone(m_buffer);
             }
             return *this;
@@ -171,8 +173,10 @@ namespace hive
 
         ~Functor()
         {
-            if (m_callable)
+            if (m_callable != nullptr)
+            {
                 m_callable->~Callable();
+            }
         }
 
         R operator()(Args... args)

@@ -37,14 +37,16 @@ namespace hive
     {
         Unload();
         m_handle = static_cast<void*>(LoadLibraryA(path));
-        if (!m_handle)
+        if (m_handle == nullptr)
         {
             DWORD err = GetLastError();
             FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, err, 0, m_errorBuf,
                            static_cast<DWORD>(kErrorBufSize), nullptr);
             size_t len = std::strlen(m_errorBuf);
             while (len > 0 && (m_errorBuf[len - 1] == '\n' || m_errorBuf[len - 1] == '\r'))
+            {
                 m_errorBuf[--len] = '\0';
+            }
             return false;
         }
         m_errorBuf[0] = '\0';
@@ -53,7 +55,7 @@ namespace hive
 
     void DynamicLibrary::Unload()
     {
-        if (m_handle)
+        if (m_handle != nullptr)
         {
             FreeLibrary(static_cast<HMODULE>(m_handle));
             m_handle = nullptr;
@@ -70,17 +72,21 @@ namespace hive
 
     void* DynamicLibrary::GetSymbol(const char* name) const
     {
-        if (!m_handle)
+        if (m_handle == nullptr)
+        {
             return nullptr;
+        }
         void* sym = reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(m_handle), name));
-        if (!sym)
+        if (sym == nullptr)
         {
             DWORD err = GetLastError();
             FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, err, 0, m_errorBuf,
                            static_cast<DWORD>(kErrorBufSize), nullptr);
             size_t len = std::strlen(m_errorBuf);
             while (len > 0 && (m_errorBuf[len - 1] == '\n' || m_errorBuf[len - 1] == '\r'))
+            {
                 m_errorBuf[--len] = '\0';
+            }
         }
         return sym;
     }

@@ -52,7 +52,7 @@ namespace wax
             : m_control{other.m_control}
             , m_allocator{other.m_allocator}
         {
-            if (m_control)
+            if (m_control != nullptr)
             {
                 ++m_control->ref_count;
             }
@@ -67,7 +67,7 @@ namespace wax
                 m_control = other.m_control;
                 m_allocator = other.m_allocator;
 
-                if (m_control)
+                if (m_control != nullptr)
                 {
                     ++m_control->ref_count;
                 }
@@ -117,7 +117,7 @@ namespace wax
 
         [[nodiscard]] T* Get() const noexcept
         {
-            return m_control ? &m_control->object : nullptr;
+            return m_control != nullptr ? &m_control->object : nullptr;
         }
 
         [[nodiscard]] Allocator* GetAllocator() const noexcept
@@ -127,12 +127,12 @@ namespace wax
 
         [[nodiscard]] size_t GetRefCount() const noexcept
         {
-            return m_control ? m_control->ref_count : 0;
+            return m_control != nullptr ? m_control->ref_count : 0;
         }
 
         [[nodiscard]] bool IsUnique() const noexcept
         {
-            return m_control && m_control->ref_count == 1;
+            return m_control != nullptr && m_control->ref_count == 1;
         }
 
         [[nodiscard]] explicit operator bool() const noexcept
@@ -170,7 +170,7 @@ namespace wax
     private:
         void Release() noexcept
         {
-            if (m_control && m_allocator)
+            if (m_control != nullptr && m_allocator != nullptr)
             {
                 --m_control->ref_count;
 

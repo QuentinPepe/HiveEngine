@@ -15,66 +15,9 @@ namespace queen
 
     template <comb::Allocator Allocator> class ObserverStorage;
 
-    /**
-     * Fluent API for registering observers
-     *
-     * ObserverBuilder provides a builder pattern for defining observers
-     * that react to structural ECS changes. The builder extracts the
-     * trigger type and component type from the template parameter.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ world_: World* (8 bytes)                                       │
-     * │ allocator_: Allocator* (8 bytes)                               │
-     * │ storage_: ObserverStorage* (8 bytes)                           │
-     * │ observer_: Observer* (8 bytes)                                 │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Each() registration: O(1) - allocate and store callback
-     * - Build: O(1) - already registered with storage
-     *
-     * Use cases:
-     * - Logging component lifecycle events
-     * - Validating component data on add/set
-     * - Maintaining derived state (caches, indices)
-     * - Triggering side effects (audio, VFX)
-     *
-     * Limitations:
-     * - One component type per observer
-     * - Cannot observe multiple trigger types simultaneously
-     * - Callback executes synchronously (may block)
-     *
-     * Example:
-     * @code
-     *   // Simple observer - entity and component
-     *   world.Observer<OnAdd<Health>>("LogSpawn")
-     *       .Each([](Entity e, const Health& hp) {
-     *           Log("Entity {} spawned with {} HP", e.Index(), hp.value);
-     *       });
-     *
-     *   // Observer with filter - only trigger for Player entities
-     *   world.Observer<OnRemove<Health>>("PlayerDeath")
-     *       .With<Player>()
-     *       .Each([](Entity e, const Health& hp) {
-     *           Log("Player {} died!", e.Index());
-     *       });
-     *
-     *   // Observer with Commands access for deferred mutations
-     *   world.Observer<OnSet<Health>>("DeathCheck")
-     *       .EachWithCommands([](Entity e, const Health& hp, Commands& cmd) {
-     *           if (hp.value <= 0) {
-     *               cmd.Get().Despawn(e);
-     *           }
-     *       });
-     *
-     *   // Entity-only observer (no component data)
-     *   world.Observer<OnRemove<Health>>("LogDeath")
-     *       .EachEntity([](Entity e) {
-     *           Log("Entity {} despawned", e.Index());
-     *       });
-     * @endcode
-     */
+    // Fluent builder that finalises an Observer slot already registered with ObserverStorage.
+    // Callbacks are type-erased into a stable thunk + heap-allocated closure so the storage
+    // does not need to know the lambda's concrete type.
     template <ObserverTrigger TriggerEvent, comb::Allocator Allocator> class ObserverBuilder
     {
     public:
@@ -89,31 +32,15 @@ namespace queen
         {
         }
 
-        /**
-         * Add a filter component requirement
-         *
-         * The observer will only trigger for entities that have
-         * the specified component type.
-         *
-         * @tparam T Component type to require
-         * @return Reference to this builder for chaining
-         */
+        // Restricts firing to entities that also carry component T.
         template <typename T> ObserverBuilder& With()
         {
             m_observer->AddFilter(TypeIdOf<T>());
             return *this;
         }
 
-        /**
-         * Register callback with entity and component reference
-         *
-         * Callback signature: void(Entity e, const Component& c)
-         * The component reference is valid during the callback.
-         *
-         * @tparam F Lambda type
-         * @param func Callback function
-         * @return ObserverId for the registered observer
-         */
+        // Attaches a callback of signature void(Entity, const Component&). The component
+        // pointer can be null on OnRemove after destruction; the thunk skips the call in that case.
         template <typename F> ObserverId Each(F&& func)
         {
             using FuncType = std::decay_t<F>;
@@ -140,16 +67,8 @@ namespace queen
             return m_observer->Id();
         }
 
-        /**
-         * Register callback with entity only (no component data)
-         *
-         * Callback signature: void(Entity e)
-         * Use this when you don't need the component data.
-         *
-         * @tparam F Lambda type
-         * @param func Callback function
-         * @return ObserverId for the registered observer
-         */
+        // Entity-only variant for OnRemove and other cases where the component has already
+        // been destroyed by the time the callback fires.
         template <typename F> ObserverId EachEntity(F&& func)
         {
             using FuncType = std::decay_t<F>;
@@ -173,16 +92,7 @@ namespace queen
             return m_observer->Id();
         }
 
-        /**
-         * Register callback with entity, component, and World reference
-         *
-         * Callback signature: void(World& world, Entity e, const Component& c)
-         * Use this when you need to query other components during the callback.
-         *
-         * @tparam F Lambda type
-         * @param func Callback function
-         * @return ObserverId for the registered observer
-         */
+        // World-aware variant for callbacks that need to query other components reactively.
         template <typename F> ObserverId EachWithWorld(F&& func)
         {
             using FuncType = std::decay_t<F>;
@@ -208,9 +118,6 @@ namespace queen
             return m_observer->Id();
         }
 
-        /**
-         * Get the observer ID (before callback is registered)
-         */
         [[nodiscard]] ObserverId Id() const noexcept
         {
             return m_observer->Id();

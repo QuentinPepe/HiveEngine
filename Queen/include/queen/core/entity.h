@@ -6,47 +6,13 @@
 
 namespace queen
 {
-    /**
-     * Entity identifier with generation counter
-     *
-     * 64-bit packed structure containing:
-     * - Index (32 bits): Slot in entity storage, allows ~4 billion entities
-     * - Generation (16 bits): Incremented on recycle, detects use-after-free
-     * - Flags (16 bits): Entity state flags (disabled, pending delete, etc.)
-     *
-     * Memory layout (64 bits total):
-     * ┌────────────────────────────────────────────────────────────────┐
-     * │ Bits 0-31:  Index (entity slot)                                │
-     * │ Bits 32-47: Generation (use-after-free detection)              │
-     * │ Bits 48-63: Flags                                              │
-     * │   Bit 48:   Alive flag                                         │
-     * │   Bit 49:   Disabled flag                                      │
-     * │   Bit 50:   Pending delete flag                                │
-     * │   Bit 51:   Has relationships flag                             │
-     * │   Bits 52-63: Reserved                                         │
-     * └────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Size: 8 bytes (fits in register)
-     * - Comparison: O(1) - single 64-bit compare
-     * - Hash: O(1) - identity hash or FNV-1a
-     * - Copy: Trivial (memcpy-able)
-     *
-     * Limitations:
-     * - Max ~4 billion concurrent entities (32-bit index)
-     * - Generation saturates at 65535 (recycled indices lose use-after-free detection)
-     * - Entity validity requires EntityAllocator lookup
-     *
-     * Example:
-     * @code
-     *   Entity e = allocator.Allocate();
-     *   uint32_t idx = e.Index();
-     *   uint16_t gen = e.Generation();
-     *
-     *   allocator.Deallocate(e);
-     *   // e.Index() still valid, but IsAlive(e) returns false
-     * @endcode
-     */
+    // Entity identifier packed into 64 bits. Generation detects use-after-free on recycled slots.
+    // Memory layout (64 bits total):
+    // ┌────────────────────────────────────────────────────────────────┐
+    // │ Bits 0-31:  Index (entity slot)                                │
+    // │ Bits 32-47: Generation (saturates at 65535)                    │
+    // │ Bits 48-63: Flags (alive, disabled, pending delete, ...)       │
+    // └────────────────────────────────────────────────────────────────┘
     class Entity
     {
     public:

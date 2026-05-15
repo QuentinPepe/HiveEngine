@@ -38,20 +38,28 @@ namespace nectar
         [[nodiscard]] MeshAsset* Load(wax::ByteSpan data, comb::DefaultAllocator& alloc) override
         {
             if (data.Size() < sizeof(NmshHeader))
+            {
                 return nullptr;
+            }
 
             NmshHeader hdr{};
             std::memcpy(&hdr, data.Data(), sizeof(NmshHeader));
             if (hdr.m_magic != kNmshMagic)
+            {
                 return nullptr;
+            }
 
             size_t expected = NmshTotalSize(hdr);
             if (data.Size() < expected)
+            {
                 return nullptr;
+            }
 
             auto* blob = static_cast<uint8_t*>(alloc.Allocate(expected, alignof(std::max_align_t)));
-            if (!blob)
+            if (blob == nullptr)
+            {
                 return nullptr;
+            }
 
             auto* asset = comb::New<MeshAsset>(alloc);
             asset->header = hdr;
@@ -64,17 +72,19 @@ namespace nectar
 
         void Unload(MeshAsset* asset, comb::DefaultAllocator& alloc) override
         {
-            if (asset)
+            if (asset != nullptr)
             {
-                if (asset->data)
+                if (asset->data != nullptr)
+                {
                     alloc.Deallocate(asset->data);
+                }
                 comb::Delete(alloc, asset);
             }
         }
 
         [[nodiscard]] size_t SizeOf(const MeshAsset* asset) const override
         {
-            return sizeof(MeshAsset) + (asset ? asset->data_size : 0);
+            return sizeof(MeshAsset) + (asset != nullptr ? asset->data_size : 0);
         }
     };
 

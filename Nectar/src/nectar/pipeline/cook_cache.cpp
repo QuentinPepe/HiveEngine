@@ -54,7 +54,9 @@ namespace nectar
 
         auto result = ContentHash::FromData(buf, offset);
         if (heap)
+        {
             comb::DeleteArray(comb::GetDefaultAllocator(), buf, bufSize);
+        }
         return result;
     }
 
@@ -71,7 +73,7 @@ namespace nectar
         uint64_t key = MakeKey(id, platform);
 
         auto* existing = m_entries.Find(key);
-        if (existing)
+        if (existing != nullptr)
         {
             *existing = entry;
         }
@@ -81,7 +83,7 @@ namespace nectar
 
             // Track key in secondary index
             auto* keys = m_assetKeys.Find(id);
-            if (keys)
+            if (keys != nullptr)
             {
                 keys->PushBack(key);
             }
@@ -100,7 +102,7 @@ namespace nectar
         m_entries.Insert(compositeKey, entry);
 
         auto* keys = m_assetKeys.Find(id);
-        if (keys)
+        if (keys != nullptr)
         {
             keys->PushBack(compositeKey);
         }
@@ -116,11 +118,15 @@ namespace nectar
     {
         std::lock_guard lock{m_mutex};
         auto* keys = m_assetKeys.Find(id);
-        if (!keys)
+        if (keys == nullptr)
+        {
             return;
+        }
 
         for (size_t i = 0; i < keys->Size(); ++i)
+        {
             m_entries.Remove((*keys)[i]);
+        }
 
         m_assetKeys.Remove(id);
     }
@@ -133,7 +139,7 @@ namespace nectar
 
         // Remove from secondary index
         auto* keys = m_assetKeys.Find(id);
-        if (keys)
+        if (keys != nullptr)
         {
             for (size_t i = 0; i < keys->Size(); ++i)
             {
@@ -141,13 +147,17 @@ namespace nectar
                 {
                     // Swap-and-pop
                     if (i < keys->Size() - 1)
+                    {
                         (*keys)[i] = (*keys)[keys->Size() - 1];
+                    }
                     keys->PopBack();
                     break;
                 }
             }
             if (keys->IsEmpty())
+            {
                 m_assetKeys.Remove(id);
+            }
         }
     }
 

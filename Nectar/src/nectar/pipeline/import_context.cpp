@@ -31,8 +31,10 @@ namespace nectar
     AssetId ImportContext::ResolveByPath(wax::StringView relativePath)
     {
         auto* record = m_db->FindByPath(relativePath);
-        if (!record)
+        if (record == nullptr)
+        {
             return AssetId::Invalid();
+        }
         return record->m_uuid;
     }
 
@@ -55,7 +57,9 @@ namespace nectar
     void ImportContext::DeclareDep(AssetId dep, DepKind kind)
     {
         if (!dep.IsValid())
+        {
             return;
+        }
         m_declaredDeps.PushBack(DependencyEdge{m_currentAsset, dep, kind});
     }
 } // namespace nectar

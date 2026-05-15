@@ -69,7 +69,7 @@ namespace wax
 
         void WriteString(const char* str) noexcept
         {
-            const size_t len = str ? std::strlen(str) : 0;
+            const size_t len = str != nullptr ? std::strlen(str) : 0;
             Write<uint32_t>(static_cast<uint32_t>(len));
             if (len > 0)
             {
@@ -88,7 +88,7 @@ namespace wax
 
         void WriteStringZ(const char* str) noexcept
         {
-            if (str)
+            if (str != nullptr)
             {
                 const size_t len = std::strlen(str);
                 m_buffer.Append(str, len + 1);

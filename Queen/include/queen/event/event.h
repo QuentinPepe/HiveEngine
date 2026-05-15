@@ -7,84 +7,13 @@
 
 namespace queen
 {
-    /**
-     * Concept for types that can be used as events
-     *
-     * Events are plain data types that carry information between systems.
-     * They must be trivially copyable for efficient queue storage and
-     * trivially destructible to avoid cleanup overhead.
-     *
-     * Use cases:
-     * - Gameplay events (DamageEvent, SpawnEvent, DeathEvent)
-     * - System-to-system communication
-     * - Input events (JumpPressed, AttackTriggered)
-     * - Audio/VFX triggers
-     *
-     * Performance characteristics:
-     * - Zero overhead type constraint (compile-time only)
-     * - Enables memcpy-based queue operations
-     * - No destructor calls needed on buffer clear
-     *
-     * Limitations:
-     * - Cannot contain pointers to dynamic memory (would leak)
-     * - Cannot contain non-trivial types (std::string, std::vector)
-     * - Must be self-contained (all data inline)
-     *
-     * Example:
-     * @code
-     *   // Valid event - trivially copyable struct
-     *   struct DamageEvent {
-     *       Entity target;
-     *       Entity source;
-     *       float amount;
-     *       DamageType type;
-     *   };
-     *   static_assert(Event<DamageEvent>);
-     *
-     *   // Valid event - simple data
-     *   struct JumpEvent {
-     *       Entity entity;
-     *       float force;
-     *   };
-     *   static_assert(Event<JumpEvent>);
-     *
-     *   // Invalid - contains std::string (not trivially copyable)
-     *   struct InvalidEvent {
-     *       std::string message;  // ERROR: not trivially copyable
-     *   };
-     *   // static_assert(Event<InvalidEvent>);  // Would fail
-     * @endcode
-     */
+    // Constrains event payloads to trivially copyable/destructible non-empty types so the
+    // queue can rely on memcpy semantics and skip destructor calls on Clear/Swap.
     template <typename T>
-    concept Event = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> &&
-                    !std::is_empty_v<T>; // Events should carry data
+    concept Event = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && !std::is_empty_v<T>;
 
-    /**
-     * Type-safe identifier for event types
-     *
-     * EventId wraps a TypeId to provide type-safe event type identification.
-     * Used internally by the event system for queue lookup.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────┐
-     * │ value_: TypeId (8 bytes)               │
-     * └────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Construction: O(1) - compile-time hash
-     * - Comparison: O(1) - integer comparison
-     * - Hash: O(1) - direct value use
-     *
-     * Example:
-     * @code
-     *   EventId damage_id = EventIdOf<DamageEvent>();
-     *   EventId spawn_id = EventIdOf<SpawnEvent>();
-     *
-     *   if (damage_id == EventIdOf<DamageEvent>()) {
-     *       // Same event type
-     *   }
-     * @endcode
-     */
+    // Strongly-typed TypeId wrapper used for event-queue lookup; the distinct type prevents
+    // accidentally mixing event identifiers with arbitrary TypeIds at call sites.
     class EventId
     {
     public:
@@ -116,30 +45,13 @@ namespace queen
         TypeId m_value;
     };
 
-    /**
-     * Get the EventId for an event type at compile-time
-     *
-     * @tparam T Event type (must satisfy Event concept)
-     * @return Unique EventId for the type
-     */
     template <Event T> [[nodiscard]] constexpr EventId EventIdOf() noexcept
     {
         return EventId{TypeIdOf<T>()};
     }
 
-    /**
-     * Type-erased metadata for an event type
-     *
-     * Contains size and alignment information needed for type-erased
-     * event queue operations.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────┐
-     * │ id: EventId (8 bytes)                  │
-     * │ size: size_t (8 bytes)                 │
-     * │ alignment: size_t (8 bytes)            │
-     * └────────────────────────────────────────┘
-     */
+    // Erased size/alignment metadata so the event registry can manage queue memory without
+    // instantiating per-type machinery.
     struct EventMeta
     {
         EventId m_id;

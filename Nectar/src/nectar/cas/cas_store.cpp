@@ -28,7 +28,9 @@ namespace nectar
         {
             std::error_code ec;
             if (std::filesystem::exists(path.CStr(), ec))
+            {
                 return hash;
+            }
         }
 
         auto parent = std::filesystem::path{path.CStr()}.parent_path();
@@ -39,11 +41,15 @@ namespace nectar
         tmpPath.Append(".tmp");
 
         FILE* file = std::fopen(tmpPath.CStr(), "wb");
-        if (!file)
+        if (file == nullptr)
+        {
             return ContentHash::Invalid();
+        }
 
         if (data.Size() > 0)
+        {
             std::fwrite(data.Data(), 1, data.Size(), file);
+        }
 
         std::fclose(file);
 
@@ -67,8 +73,10 @@ namespace nectar
         BuildBlobPath(hash, path);
 
         FILE* file = std::fopen(path.CStr(), "rb");
-        if (!file)
+        if (file == nullptr)
+        {
             return buffer;
+        }
 
         int64_t fileSize = FileSize(file);
 

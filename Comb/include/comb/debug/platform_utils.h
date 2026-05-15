@@ -1,18 +1,5 @@
-/**
- * Platform-Specific Utilities for Memory Debugging
- *
- * Cross-platform abstractions for:
- * - High-resolution timestamps
- * - Thread ID retrieval
- * - Callstack capture (optional)
- *
- * Supported platforms:
- * - Windows (MSVC, Clang-CL)
- * - Linux (GCC, Clang)
- * - macOS (Clang, GCC)
- *
- * Design: Zero overhead when COMB_MEM_DEBUG=0
- */
+// Cross-platform timestamps, thread IDs, and optional callstack capture
+// for memory debugging. Compiled out when COMB_MEM_DEBUG=0.
 
 #pragma once
 
@@ -53,22 +40,8 @@ namespace comb::debug
 
     // High-Resolution Timestamp
 
-    /**
-     * Get high-resolution timestamp (monotonic, nanoseconds)
-     *
-     * Implementations:
-     * - Windows: QueryPerformanceCounter (QPC)
-     * - Linux: clock_gettime(CLOCK_MONOTONIC)
-     * - macOS: clock_gettime(CLOCK_MONOTONIC) or mach_absolute_time()
-     *
-     * Returns: Monotonic timestamp in nanoseconds (uint64_t)
-     *
-     * NOTE: Does NOT use __rdtsc() because:
-     * - Not portable to ARM (Nintendo Switch, mobile)
-     * - Can be affected by CPU frequency scaling
-     * - Requires serialization for accuracy
-     *
-     */
+    // Monotonic nanosecond timestamp. Avoids __rdtsc() because it is not
+    // portable to ARM and is affected by frequency scaling.
     inline uint64_t GetTimestamp() noexcept
     {
 #if HIVE_PLATFORM_WINDOWS
@@ -94,29 +67,14 @@ namespace comb::debug
 #endif
     }
 
-/**
- * Check if CPU cycle counter is available (compile-time)
- * True on x86/x64, false on ARM/RISC-V
- */
+// True on x86/x64, false on ARM/RISC-V. Gate GetCycleCounter() callers
+// with `if constexpr (kHasCycleCounter)`.
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     inline constexpr bool kHasCycleCounter = true;
 #else
     inline constexpr bool kHasCycleCounter = false;
 #endif
 
-/**
- * Get CPU cycle counter (OPTIONAL, x86/x64 only)
- *
- * This is faster than GetTimestamp() but:
- * - Only works on x86/x64 (Intel/AMD)
- * - Not portable to ARM
- * - Affected by frequency scaling
- *
- * Use GetTimestamp() for portable code.
- * Use GetCycleCounter() only for x86-specific profiling.
- *
- * Check availability with: if constexpr (kHasCycleCounter)
- */
 #if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     inline uint64_t GetCycleCounter() noexcept
     {
@@ -126,17 +84,8 @@ namespace comb::debug
 
     // Thread ID
 
-    /**
-     * Get current thread ID (cross-platform)
-     *
-     * Returns: Platform-specific thread ID as uint32_t
-     * - Windows: GetCurrentThreadId()
-     * - Linux/macOS: pthread_self() (cast to uint32_t)
-     *
-     * NOTE: This is NOT the same as std::thread::id (which is opaque).
-     * We need a numeric ID for display/logging purposes.
-     *
-     */
+    // Numeric thread ID suitable for logging. Not the same as std::thread::id,
+    // which is opaque and can't be printed directly.
     inline uint32_t GetThreadId() noexcept
     {
 #if HIVE_PLATFORM_WINDOWS
@@ -157,19 +106,8 @@ namespace comb::debug
 
 #if COMB_MEM_DEBUG_CALLSTACKS
 
-    /**
-     * Capture callstack (platform-specific)
-     *
-     * Captures up to maxCallstackDepth (16) frames.
-     * Skips the first frame (this function itself).
-     *
-     * @param frames Output array (must have space for maxCallstackDepth)
-     * @param depth Output: actual number of frames captured
-     *
-     * Performance: VERY SLOW
-     *
-     * Only use when debugging specific leaks!
-     */
+    // Skips the first frame (this function itself). Very slow — only use when
+    // chasing a specific leak.
     inline void CaptureCallstack(void** frames, uint32_t& depth) noexcept
     {
         hive::Assert(frames != nullptr, "frames must not be null");
@@ -199,32 +137,15 @@ namespace comb::debug
 #endif
     }
 
-    /**
-     * Print callstack to log (platform-specific symbolication)
-     *
-     * Resolves addresses to function names and prints to hive::Log.
-     *
-     * @param frames Callstack frames from CaptureCallstack()
-     * @param depth Number of frames
-     *
-     * Requirements:
-     * - Windows: dbghelp.lib linked, symbols available (.pdb)
-     * - Linux/macOS: Compile with -rdynamic, or use addr2line
-     */
+    // Requires dbghelp.lib + .pdb on Windows, -rdynamic on POSIX, otherwise
+    // frames stay unresolved.
     void PrintCallstack(void* const* frames, uint32_t depth);
 
 #endif // COMB_MEM_DEBUG_CALLSTACKS
 
     // Utility: Format Time Duration
 
-    /**
-     * Format timestamp difference as human-readable string
-     *
-     * Example: FormatDuration(1500000000) -> "1.5s"
-     *
-     * @param nanos Duration in nanoseconds
-     * @return Formatted string (e.g., "1.5ms", "500ns", "2.3s")
-     */
+    // Returns a thread-local buffer scaled to ns/us/ms/s.
     inline const char* FormatDuration(uint64_t nanos)
     {
         static thread_local char s_buffer[64];

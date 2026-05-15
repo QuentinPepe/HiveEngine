@@ -16,12 +16,8 @@ namespace comb
     // Forward declaration
     class ModuleAllocator;
 
-    /**
-     * Registry that tracks all ModuleAllocators for memory stats
-     *
-     * Works in all build modes (not just COMB_MEM_DEBUG).
-     * Thread-safe singleton.
-     */
+    // Thread-safe singleton that tracks ModuleAllocators for stats in all
+    // build modes (not gated on COMB_MEM_DEBUG).
     class HIVE_API ModuleRegistry
     {
     public:
@@ -78,29 +74,9 @@ namespace comb
         mutable std::mutex m_mutex;
     };
 
-    /**
-     * Per-module allocator that bundles BuddyAllocator + ThreadSafeAllocator
-     *
-     * Each module/system should create its own ModuleAllocator to isolate
-     * memory usage. Auto-registers with ModuleRegistry for stats tracking.
-     *
-     * Example:
-     * @code
-     *   // In Queen module
-     *   namespace queen {
-     *       inline comb::DefaultAllocator& GetAllocator() {
-     *           static comb::ModuleAllocator alloc{"Queen", 16 * 1024 * 1024};
-     *           return alloc.Get();
-     *       }
-     *   }
-     *
-     *   // Usage:
-     *   wax::Vector<int> entities{queen::GetAllocator()};
-     *
-     *   // Print all module stats:
-     *   comb::ModuleRegistry::GetInstance().PrintStats();
-     * @endcode
-     */
+    // Per-module allocator bundling ChainedBuddyAllocator + ThreadSafeAllocator.
+    // One per module/system to isolate memory usage. Auto-registers with
+    // ModuleRegistry on construction.
     class HIVE_API ModuleAllocator
     {
     public:
@@ -164,13 +140,7 @@ namespace comb
     };
 
 
-    /**
-     * Get the global default allocator instance (Meyers singleton)
-     *
-     * Used as fallback when no module allocator is provided.
-     *
-     * @return Reference to the global default allocator
-     */
+    // Fallback used when no module allocator is provided.
     HIVE_API DefaultAllocator& GetDefaultAllocator();
 
     static_assert(Allocator<DefaultAllocator>, "DefaultAllocator must satisfy comb::Allocator concept");

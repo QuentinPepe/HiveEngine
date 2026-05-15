@@ -47,14 +47,18 @@ namespace nectar
         {
             // Cycle detected — cook all sequentially as fallback
             for (size_t i = 0; i < request.m_assets.Size(); ++i)
+            {
                 CookAsset(request.m_assets[i], request.m_platform, output);
+            }
             return output;
         }
 
         // Build a set of requested asset IDs for filtering
         wax::HashSet<AssetId> requested{*m_alloc};
         for (size_t i = 0; i < request.m_assets.Size(); ++i)
+        {
             requested.Insert(request.m_assets[i]);
+        }
 
         // Cook level by level, filtering to only requested assets
         for (size_t lvl = 0; lvl < levels.Size(); ++lvl)
@@ -63,18 +67,24 @@ namespace nectar
             for (size_t i = 0; i < levels[lvl].Size(); ++i)
             {
                 if (requested.Contains(levels[lvl][i]))
+                {
                     filtered.PushBack(levels[lvl][i]);
+                }
             }
 
             if (!filtered.IsEmpty())
+            {
                 CookLevel(filtered, request.m_platform, request.m_workerCount, output);
+            }
         }
 
         // Handle assets not in the graph (no dependencies registered)
         for (size_t i = 0; i < request.m_assets.Size(); ++i)
         {
             if (!graph.HasNode(request.m_assets[i]))
+            {
                 CookAsset(request.m_assets[i], request.m_platform, output);
+            }
         }
 
         return output;
@@ -87,14 +97,14 @@ namespace nectar
         result.m_errorMessage = wax::String{*m_alloc};
 
         auto* record = m_db->FindByUuid(id);
-        if (!record)
+        if (record == nullptr)
         {
             result.m_errorMessage.Append("Asset not found in database");
             return result;
         }
 
         IAssetCooker* cooker = m_registry->FindByType(record->m_type.View());
-        if (!cooker)
+        if (cooker == nullptr)
         {
             result.m_errorMessage.Append("No cooker for type: ");
             result.m_errorMessage.Append(record->m_type.View().Data(), record->m_type.View().Size());
@@ -109,7 +119,7 @@ namespace nectar
 
         ContentHash cookKey = ComputeCookKey(id, platform);
         auto* cached = m_cache->Find(id, platform);
-        if (cached && cached->m_cookKey == cookKey)
+        if (cached != nullptr && cached->m_cookKey == cookKey)
         {
             result.m_success = true;
             result.m_cookedData = m_cas->Load(cached->m_cookedHash);
@@ -153,7 +163,9 @@ namespace nectar
         m_cache->Invalidate(changed);
 
         for (size_t i = 0; i < dependents.Size(); ++i)
+        {
             m_cache->Invalidate(dependents[i]);
+        }
     }
 
     void CookPipeline::CookLevel(const wax::Vector<AssetId>& level, wax::StringView platform, size_t workerCount,
@@ -163,7 +175,9 @@ namespace nectar
         if (workerCount <= 1 || level.Size() <= 1 || !m_jobs.IsValid())
         {
             for (size_t i = 0; i < level.Size(); ++i)
+            {
                 CookAsset(level[i], platform, output);
+            }
             return;
         }
 
@@ -195,7 +209,9 @@ namespace nectar
                 c.m_output->m_skipped += localOut.m_skipped;
                 c.m_output->m_failed += localOut.m_failed;
                 for (size_t j = 0; j < localOut.m_failedAssets.Size(); ++j)
+                {
                     c.m_output->m_failedAssets.PushBack(localOut.m_failedAssets[j]);
+                }
             },
             &ctx);
     }
@@ -203,12 +219,16 @@ namespace nectar
     ContentHash CookPipeline::ComputeCookKey(AssetId id, wax::StringView platform)
     {
         auto* record = m_db->FindByUuid(id);
-        if (!record)
+        if (record == nullptr)
+        {
             return ContentHash::Invalid();
+        }
 
         IAssetCooker* cooker = m_registry->FindByType(record->m_type.View());
-        if (!cooker)
+        if (cooker == nullptr)
+        {
             return ContentHash::Invalid();
+        }
 
         // Gather cooked hashes of hard dependencies
         auto& graph = m_db->GetDependencyGraph();
@@ -219,10 +239,14 @@ namespace nectar
         for (size_t i = 0; i < deps.Size(); ++i)
         {
             auto* cached = m_cache->Find(deps[i], platform);
-            if (cached)
+            if (cached != nullptr)
+            {
                 depHashes.PushBack(cached->m_cookedHash);
+            }
             else
+            {
                 depHashes.PushBack(ContentHash::Invalid());
+            }
         }
 
         wax::Span<const ContentHash> depSpan{depHashes.Data(), depHashes.Size()};
@@ -233,7 +257,7 @@ namespace nectar
     {
         HIVE_PROFILE_SCOPE_N("CookPipeline::CookAsset");
         auto* record = m_db->FindByUuid(id);
-        if (!record || !record->m_intermediateHash.IsValid())
+        if (record == nullptr || !record->m_intermediateHash.IsValid())
         {
             ++output.m_failed;
             output.m_failedAssets.PushBack(id);
@@ -241,7 +265,7 @@ namespace nectar
         }
 
         IAssetCooker* cooker = m_registry->FindByType(record->m_type.View());
-        if (!cooker)
+        if (cooker == nullptr)
         {
             ++output.m_failed;
             output.m_failedAssets.PushBack(id);
@@ -250,7 +274,7 @@ namespace nectar
 
         ContentHash cookKey = ComputeCookKey(id, platform);
         auto* cached = m_cache->Find(id, platform);
-        if (cached && cached->m_cookKey == cookKey)
+        if (cached != nullptr && cached->m_cookKey == cookKey)
         {
             ++output.m_skipped;
             return;

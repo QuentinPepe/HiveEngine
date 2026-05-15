@@ -1,4 +1,5 @@
 #include <waggle/systems/transform_system.h>
+#include <waggle/systems/debug_freecam_system.h>
 #include <waggle/systems/propolis_system.h>
 
 #include <hive/math/math.h>
@@ -20,7 +21,9 @@ namespace waggle
     {
         auto* time = world.Resource<Time>();
         if (time == nullptr)
+        {
             return;
+        }
 
         uint64_t tick = time->m_tick;
 
@@ -31,20 +34,30 @@ namespace waggle
 
         world.ForEachArchetype([&](auto& arch) {
             if (arch.template HasComponent<queen::Parent>())
+            {
                 return;
+            }
             if (!arch.template HasComponent<Transform>())
+            {
                 return;
+            }
             if (!arch.template HasComponent<WorldMatrix>())
+            {
                 return;
+            }
             for (uint32_t row = 0; row < arch.EntityCount(); ++row)
+            {
                 order.PushBack(arch.GetEntity(row));
+            }
         });
 
         for (size_t i = 0; i < order.Size(); ++i)
         {
             world.ForEachChild(order[i], [&](queen::Entity child) {
                 if (world.Has<Transform>(child) && world.Has<WorldMatrix>(child))
+                {
                     order.PushBack(child);
+                }
             });
         }
 
@@ -56,7 +69,9 @@ namespace waggle
             auto* wm = world.Get<WorldMatrix>(e);
             auto* ver = world.Get<TransformVersion>(e);
             if (tf == nullptr || wm == nullptr)
+            {
                 continue;
+            }
 
             bool dirty = (ver != nullptr && ver->m_lastModified == tick) || tick <= 1;
 
@@ -65,7 +80,9 @@ namespace waggle
             {
                 auto* pver = world.Get<TransformVersion>(parent);
                 if (pver != nullptr && pver->m_lastModified == tick)
+                {
                     dirty = true;
+                }
 
                 if (dirty)
                 {
@@ -73,7 +90,9 @@ namespace waggle
                     Mat4 local = TRS(tf->m_position, tf->m_rotation, tf->m_scale);
                     wm->m_matrix = pwm != nullptr ? pwm->m_matrix * local : local;
                     if (ver != nullptr)
+                    {
                         ver->m_lastModified = tick;
+                    }
                 }
             }
             else
@@ -90,7 +109,9 @@ namespace waggle
     {
         auto* time = world.Resource<Time>();
         if (time == nullptr)
+        {
             return;
+        }
 
         uint64_t tick = time->m_tick;
 
@@ -100,7 +121,9 @@ namespace waggle
             .Each([&](WorldAABB& waabb, const WorldMatrix& wm,
                        const LocalAABB& local, const TransformVersion& ver) {
                 if (ver.m_lastModified == tick || tick <= 1)
+                {
                     waabb.m_bounds = TransformAABB(wm.m_matrix, local.m_bounds);
+                }
             });
     }
 
@@ -111,7 +134,9 @@ namespace waggle
                 auto* ver = w.Get<TransformVersion>(entity);
                 auto* time = w.Resource<Time>();
                 if (ver != nullptr && time != nullptr)
+                {
                     ver->m_lastModified = time->m_tick;
+                }
             });
     }
 
@@ -132,6 +157,7 @@ namespace waggle
             .Run(WorldAABBSystem);
 
         RegisterPropolisSystem(world);
+        RegisterDebugFreeCam(world);
     }
 
 } // namespace waggle

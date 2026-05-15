@@ -1,4 +1,5 @@
 #include <waggle/systems/propolis_system.h>
+#include <waggle/play_state.h>
 #include <waggle/time.h>
 
 #include <propolis/runtime/propolis_executor.h>
@@ -11,14 +12,21 @@ namespace waggle
 {
     void RegisterPropolisSystem(queen::World& world)
     {
-        if (!world.Resource<propolis::ScriptRegistry>())
+        if (world.Resource<propolis::ScriptRegistry>() == nullptr)
         {
             world.InsertResource(propolis::ScriptRegistry{});
         }
 
-        if (!world.Resource<propolis::ScriptTime>())
+        if (world.Resource<propolis::ScriptTime>() == nullptr)
         {
             world.InsertResource(propolis::ScriptTime{});
+        }
+
+        if (world.Resource<propolis::ScriptExecutionGate>() == nullptr)
+        {
+            propolis::ScriptExecutionGate gate{};
+            gate.m_enabled = (GetPlayState(world) == PlayState::PLAYING);
+            world.InsertResource(gate);
         }
 
         // Sync waggle::Time → propolis::ScriptTime inside the executor systems

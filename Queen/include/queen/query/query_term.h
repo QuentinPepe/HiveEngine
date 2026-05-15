@@ -6,14 +6,7 @@
 
 namespace queen
 {
-    /**
-     * Query term operator - defines how a component is matched
-     *
-     * Operators control the matching logic for query terms:
-     * - With: Entity must have the component (required)
-     * - Without: Entity must not have the component (excluded)
-     * - Optional: Entity may or may not have the component
-     */
+    // Match mode for a query term: required presence, exclusion, or optional access.
     enum class TermOperator : uint8_t
     {
         WITH,    // Must have component (default)
@@ -21,13 +14,7 @@ namespace queen
         Optional // May have component (access via pointer, nullptr if absent)
     };
 
-    /**
-     * Query term access mode - defines read/write access
-     *
-     * Access modes are used for:
-     * - Compile-time dependency analysis (parallel scheduling)
-     * - Determining const vs mutable access
-     */
+    // Access mode for a query term; drives parallel-scheduling dependency analysis.
     enum class TermAccess : uint8_t
     {
         READ,  // Immutable access (const T&)
@@ -35,22 +22,8 @@ namespace queen
         NONE   // No data access, just filter (With<Tag>, Without<Tag>)
     };
 
-    /**
-     * Query term - a single condition in a query
-     *
-     * Represents one component requirement in a query. Combined with other
-     * terms to form a complete query that matches archetypes.
-     *
-     * Example:
-     * @code
-     *   // Query for entities with Position (read) and Velocity (write), without Dead
-     *   Term terms[] = {
-     *       Term::Create<Position>(TermOperator::With, TermAccess::Read),
-     *       Term::Create<Velocity>(TermOperator::With, TermAccess::Write),
-     *       Term::Create<Dead>(TermOperator::Without, TermAccess::None)
-     *   };
-     * @endcode
-     */
+    // Runtime representation of one component condition in a query.
+    // Type-erased counterpart of the compile-time Read/Write/With/Without wrappers.
     struct Term
     {
         TypeId m_typeId = 0;
@@ -102,17 +75,7 @@ namespace queen
 
     // Query Term Wrappers (Compile-Time DSL)
 
-    /**
-     * Read<T> - Request read-only access to component T
-     *
-     * Used in query template parameters to indicate immutable access.
-     * Entities must have this component.
-     *
-     * Example:
-     * @code
-     *   world.Query<Read<Position>, Read<Velocity>>().Each(...);
-     * @endcode
-     */
+    // Require component T with read-only access; contributes a read dependency to the scheduler.
     template <typename T> struct Read
     {
         using ComponentType = T;
@@ -126,20 +89,7 @@ namespace queen
         }
     };
 
-    /**
-     * Write<T> - Request mutable access to component T
-     *
-     * Used in query template parameters to indicate mutable access.
-     * Entities must have this component. Creates a write dependency
-     * for parallel scheduling analysis.
-     *
-     * Example:
-     * @code
-     *   world.Query<Read<Position>, Write<Velocity>>().Each([](const Position& p, Velocity& v) {
-     *       v.x += p.x * 0.1f;
-     *   });
-     * @endcode
-     */
+    // Require component T with mutable access; emits a write dependency for parallel scheduling.
     template <typename T> struct Write
     {
         using ComponentType = T;
@@ -153,20 +103,8 @@ namespace queen
         }
     };
 
-    /**
-     * With<T> - Filter for entities that have component T (no data access)
-     *
-     * Used to filter entities without accessing the component data.
-     * Useful for tag components or when you only need to check presence.
-     *
-     * Example:
-     * @code
-     *   // All entities with Player tag
-     *   world.Query<Read<Position>, With<Player>>().Each([](const Position& p) {
-     *       // Player tag not accessible, just used as filter
-     *   });
-     * @endcode
-     */
+    // Presence filter: entity must have T but its data is not bound into the callback.
+    // Use for tag components or pure existence checks to avoid spurious access dependencies.
     template <typename T> struct With
     {
         using ComponentType = T;
@@ -180,19 +118,7 @@ namespace queen
         }
     };
 
-    /**
-     * Without<T> - Filter for entities that do NOT have component T
-     *
-     * Used to exclude entities that have a specific component.
-     *
-     * Example:
-     * @code
-     *   // All alive entities (no Dead component)
-     *   world.Query<Read<Position>, Without<Dead>>().Each([](const Position& p) {
-     *       // Process living entities
-     *   });
-     * @endcode
-     */
+    // Exclusion filter: archetype must not contain T.
     template <typename T> struct Without
     {
         using ComponentType = T;
@@ -206,21 +132,8 @@ namespace queen
         }
     };
 
-    /**
-     * Maybe<T> - Optional read access to component T
-     *
-     * Used when a component is optional. Access is provided via pointer
-     * that may be nullptr if the entity doesn't have the component.
-     *
-     * Example:
-     * @code
-     *   world.Query<Read<Position>, Maybe<Health>>().Each([](const Position& p, const Health* h) {
-     *       if (h != nullptr) {
-     *           // Entity has Health
-     *       }
-     *   });
-     * @endcode
-     */
+    // Optional read access: callback receives a pointer that is null when the component is absent.
+    // Lets a single query span archetypes that differ only by this component.
     template <typename T> struct Maybe
     {
         using ComponentType = T;
@@ -234,11 +147,7 @@ namespace queen
         }
     };
 
-    /**
-     * MaybeWrite<T> - Optional mutable access to component T
-     *
-     * Like Maybe<T> but with write access.
-     */
+    // Optional mutable access; same semantics as Maybe but contributes a write dependency.
     template <typename T> struct MaybeWrite
     {
         using ComponentType = T;

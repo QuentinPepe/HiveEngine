@@ -11,40 +11,8 @@ namespace queen
 {
     class World;
 
-    /**
-     * Storage and management for registered systems
-     *
-     * SystemStorage holds all registered systems and provides methods for
-     * system registration, lookup, and execution. Each system is stored
-     * with its descriptor containing name, access pattern, and executor.
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ systems_: Vector<SystemDescriptor>                              │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - RegisterSystem: O(1) amortized
-     * - GetSystem(id): O(1) array access
-     * - GetSystem(name): O(n) linear search
-     * - RunSystem: O(1) + system execution time
-     * - RunAll: O(n) systems
-     *
-     * Limitations:
-     * - Systems are stored in registration order
-     * - No automatic parallel execution (requires scheduler)
-     *
-     * Example:
-     * @code
-     *   SystemStorage storage{alloc};
-     *
-     *   SystemId id = storage.RegisterSystem<Read<Position>>(world, "Movement");
-     *   storage.GetSystem(id)->each([](const Position& pos) { ... });
-     *
-     *   storage.RunSystem(world, id);
-     *   storage.RunAll(world);
-     * @endcode
-     */
+    // Owns the registered system descriptors. Indices double as SystemId, so
+    // removal is logical (executor cleared) rather than physical to keep ids stable.
     template <comb::Allocator Allocator> class SystemStorage
     {
     public:
@@ -61,14 +29,6 @@ namespace queen
         SystemStorage(SystemStorage&&) = default;
         SystemStorage& operator=(SystemStorage&&) = default;
 
-        /**
-         * Register a new system with query terms
-         *
-         * @tparam Terms Query term types
-         * @param world The world this system operates on
-         * @param name System name (for debugging)
-         * @return SystemBuilder for further configuration
-         */
         template <typename... Terms> SystemBuilder<Allocator, Terms...> Register(World& world, const char* name)
         {
             SystemId id{static_cast<uint32_t>(m_systems.Size())};
@@ -78,17 +38,8 @@ namespace queen
             return SystemBuilder<Allocator, Terms...>{world, *m_allocator, *this, &m_systems[m_systems.Size() - 1]};
         }
 
-        /**
-         * Register a simple system with a direct callback
-         *
-         * For testing and simple use cases where no query is needed.
-         *
-         * @tparam F Callable type with signature void(World<Allocator>&)
-         * @param name System name
-         * @param func Function to execute
-         * @param access Access descriptor for dependency resolution (moved)
-         * @return System ID
-         */
+        // Direct-callback overload used by tests and trivial systems. Caller supplies
+        // the access descriptor explicitly since there is no query to infer it from.
         template <typename F> SystemId Register(const char* name, F&& func, AccessDescriptor<Allocator>&& access)
         {
             SystemId id{static_cast<uint32_t>(m_systems.Size())};
@@ -112,12 +63,6 @@ namespace queen
             return id;
         }
 
-        /**
-         * Get a system by ID
-         *
-         * @param id System identifier
-         * @return Pointer to system descriptor, or nullptr if invalid
-         */
         [[nodiscard]] SystemDescriptor<Allocator>* GetSystem(SystemId id)
         {
             if (!id.IsValid() || id.Index() >= m_systems.Size())
@@ -136,12 +81,6 @@ namespace queen
             return &m_systems[id.Index()];
         }
 
-        /**
-         * Get a system by index (for iteration)
-         *
-         * @param index Index in storage
-         * @return Pointer to system descriptor, or nullptr if invalid
-         */
         [[nodiscard]] SystemDescriptor<Allocator>* GetSystemByIndex(size_t index)
         {
             if (index >= m_systems.Size())
@@ -160,12 +99,6 @@ namespace queen
             return &m_systems[index];
         }
 
-        /**
-         * Get a system by name
-         *
-         * @param name System name
-         * @return Pointer to system descriptor, or nullptr if not found
-         */
         [[nodiscard]] SystemDescriptor<Allocator>* GetSystemByName(const char* name)
         {
             for (size_t i = 0; i < m_systems.Size(); ++i)
@@ -178,12 +111,6 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Run a specific system
-         *
-         * @param world The world to run the system on
-         * @param id System to run
-         */
         void RunSystem(World& world, SystemId id, Tick currentTick)
         {
             SystemDescriptor<Allocator>* system = GetSystem(id);
@@ -201,25 +128,16 @@ namespace queen
             }
         }
 
-        /**
-         * Get the number of registered systems
-         */
         [[nodiscard]] size_t SystemCount() const noexcept
         {
             return m_systems.Size();
         }
 
-        /**
-         * Check if any systems are registered
-         */
         [[nodiscard]] bool IsEmpty() const noexcept
         {
             return m_systems.IsEmpty();
         }
 
-        /**
-         * Enable or disable a system
-         */
         void SetSystemEnabled(SystemId id, bool enabled)
         {
             SystemDescriptor<Allocator>* system = GetSystem(id);
@@ -229,9 +147,6 @@ namespace queen
             }
         }
 
-        /**
-         * Check if a system is enabled
-         */
         [[nodiscard]] bool IsSystemEnabled(SystemId id) const
         {
             const SystemDescriptor<Allocator>* system = GetSystem(id);

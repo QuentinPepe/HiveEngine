@@ -10,6 +10,8 @@
 #include <waggle/disabled_propagation.h>
 #include <waggle/systems/transform_system.h>
 #include <waggle/systems/propolis_system.h>
+
+#include <propolis/runtime/propolis_executor.h>
 #include <waggle/engine_runner.h>
 #include <waggle/gizmo_state.h>
 #include <waggle/play_state.h>
@@ -249,13 +251,25 @@ namespace
 
                 s.m_project = comb::New<waggle::ProjectManager>(alloc, alloc);
                 ctx.m_world->InsertResource(waggle::AppContext{ctx.m_app});
-                waggle::SetPlayState(*ctx.m_world, waggle::PlayState::EDITING);
+
+                // Common bootstrap — identical for editor, game and headless. The world
+                // resources, observers, systems and scene component registry are needed
+                // regardless of which front-end (Forge, standalone game, CI) drives the
+                // engine. Mode-specific overlays (UI, editor entities) come after.
+                const auto* runtime = ctx.m_world->Resource<waggle::RuntimeContext>();
+                const waggle::EngineMode mode =
+                    (runtime != nullptr) ? runtime->m_mode : waggle::EngineMode::GAME;
+                s.m_playState = (mode == waggle::EngineMode::EDITOR)
+                                    ? waggle::PlayState::EDITING
+                                    : waggle::PlayState::PLAYING;
+                waggle::SetPlayState(*ctx.m_world, s.m_playState);
+
                 waggle::RegisterDisabledObservers(*ctx.m_world);
                 waggle::RegisterTransformObservers(*ctx.m_world);
                 waggle::RegisterEngineSystems(*ctx.m_world);
+                RegisterSceneComponentTypes(s);
 
 #if HIVE_MODE_EDITOR
-                RegisterSceneComponentTypes(s);
                 SpawnEditorBaseCamera(*ctx.m_world);
                 SpawnEditorGrid(*ctx.m_world);
 #endif
@@ -306,6 +320,37 @@ namespace
                     if (toolbar != nullptr)
                     {
                         auto applyPlayState = [&ctx, &s](waggle::PlayState next) {
+                            const waggle::PlayState prev = s.m_playState;
+                            if (next == prev)
+                            {
+                                return;
+                            }
+
+                            const bool enteringPlay = (prev == waggle::PlayState::EDITING)
+                                                      && (next != waggle::PlayState::EDITING);
+                            const bool leavingPlay = (prev != waggle::PlayState::EDITING)
+                                                     && (next == waggle::PlayState::EDITING);
+
+                            if (enteringPlay)
+                            {
+                                s.m_playSceneBackup =
+                                    CaptureSceneBackup(*ctx.m_world, s.m_componentRegistry);
+                                s.m_selection.Clear();
+                            }
+                            else if (leavingPlay && !s.m_playSceneBackup.IsEmpty())
+                            {
+                                propolis::DetachAllScripts(*ctx.m_world);
+                                ClearWorldEntities(*ctx.m_world);
+                                s.m_selection.Clear();
+                                RestoreSceneBackup(*ctx.m_world, s.m_componentRegistry,
+                                                   s.m_playSceneBackup);
+                                s.m_playSceneBackup.Clear();
+                                if (s.m_mainWindow != nullptr)
+                                {
+                                    s.m_mainWindow->RefreshAll();
+                                }
+                            }
+
                             s.m_playState = next;
                             waggle::SetPlayState(*ctx.m_world, next);
                             auto* tb = s.m_mainWindow->Toolbar();

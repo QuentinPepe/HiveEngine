@@ -68,7 +68,7 @@ namespace swarm
         cacheInfo.EnableHotReload = true;
 
         CreateRenderStateCache(cacheInfo, &m_cache);
-        if (!m_cache)
+        if (m_cache == nullptr)
         {
             hive::LogError(LOG_SWARM, "ShaderLibrary: failed to create IRenderStateCache");
             return false;
@@ -80,7 +80,7 @@ namespace swarm
 
     void ShaderLibrary::Shutdown()
     {
-        if (!m_diskCachePath.IsEmpty() && m_cache)
+        if (!m_diskCachePath.IsEmpty() && m_cache != nullptr)
         {
             SaveDiskCache();
         }
@@ -134,7 +134,7 @@ namespace swarm
 
     bool ShaderLibrary::LoadDiskCache()
     {
-        if (!m_cache || m_diskCachePath.IsEmpty())
+        if (m_cache == nullptr || m_diskCachePath.IsEmpty())
         {
             return false;
         }
@@ -177,19 +177,20 @@ namespace swarm
 
     bool ShaderLibrary::SaveDiskCache()
     {
-        if (!m_cache || m_diskCachePath.IsEmpty())
+        if (m_cache == nullptr || m_diskCachePath.IsEmpty())
         {
             hive::LogWarning(LOG_SWARM, "SaveDiskCache skipped: cache={} path={}",
-                             m_cache ? "ok" : "null", m_diskCachePath.IsEmpty() ? "empty" : m_diskCachePath.CStr());
+                             (m_cache != nullptr) ? "ok" : "null",
+                             m_diskCachePath.IsEmpty() ? "empty" : m_diskCachePath.CStr());
             return false;
         }
 
         RefCntAutoPtr<IDataBlob> blob;
         const bool writeOk = m_cache->WriteToBlob(~0u, &blob);
-        if (!writeOk || !blob)
+        if (!writeOk || blob == nullptr)
         {
             hive::LogWarning(LOG_SWARM, "SaveDiskCache failed: WriteToBlob returned={}, blob={}",
-                             writeOk ? "true" : "false", blob ? "non-null" : "null");
+                             writeOk ? "true" : "false", (blob != nullptr) ? "non-null" : "null");
             return false;
         }
         hive::LogInfo(LOG_SWARM, "SaveDiskCache: writing {} bytes", blob->GetSize());
@@ -214,7 +215,7 @@ namespace swarm
 
     uint32_t ShaderLibrary::ReloadIfDirty()
     {
-        if (!m_cache)
+        if (m_cache == nullptr)
         {
             return 0;
         }
@@ -240,7 +241,7 @@ namespace swarm
         {
             RefCntAutoPtr<IShaderSourceInputStreamFactory> factory;
             CreateDefaultShaderSourceStreamFactory(m_searchPaths[i].CStr(), &factory);
-            if (factory)
+            if (factory != nullptr)
             {
                 m_pathFactories[factoryCount++] = std::move(factory);
             }

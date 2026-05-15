@@ -125,6 +125,7 @@ option(HIVE_FEATURE_LOGGING "Enable logging" ON)
 option(HIVE_FEATURE_ASSERTS "Enable asserts" ON)
 option(HIVE_FEATURE_HOT_RELOAD "Enable hot reload" OFF)
 option(HIVE_FEATURE_CONSOLE "Enable in-game console" ON)
+option(HIVE_FEATURE_DEBUG_FREECAM "Enable F1 debug freecam in gameplay builds" ON)
 
 # ============================================================================
 # Engine Options
@@ -155,6 +156,15 @@ endif()
 if(HIVE_BUILD_SHARED)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     set(HIVE_LIB_TYPE OBJECT)
+    # Tracy uses global TLS + a Profiler singleton. When the engine modules ship
+    # inside hive_engine.dll AND consumers (launcher, Forge) also pull TracyClient
+    # transitively through Hive, two Profiler instances coexist and corrupt each
+    # other's state — observed as a crash at startup. Force the profiler off in
+    # shared builds; static builds keep it whenever the preset enables it.
+    if(HIVE_FEATURE_PROFILER)
+        message(STATUS "HIVE_BUILD_SHARED=ON: forcing HIVE_FEATURE_PROFILER=OFF (Tracy is incompatible with the shared engine DLL).")
+        set(HIVE_FEATURE_PROFILER OFF CACHE BOOL "Enable profiler" FORCE)
+    endif()
 else()
     set(HIVE_LIB_TYPE STATIC)
 endif()
@@ -221,6 +231,7 @@ hive_define_feature(HIVE_FEATURE_LOGGING)
 hive_define_feature(HIVE_FEATURE_ASSERTS)
 hive_define_feature(HIVE_FEATURE_HOT_RELOAD)
 hive_define_feature(HIVE_FEATURE_CONSOLE)
+hive_define_feature(HIVE_FEATURE_DEBUG_FREECAM)
 hive_define_feature(HIVE_FEATURE_QT)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

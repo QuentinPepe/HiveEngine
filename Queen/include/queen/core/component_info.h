@@ -9,13 +9,8 @@
 
 namespace queen
 {
-    /**
-     * Storage type hint for components
-     *
-     * Components can declare their preferred storage type:
-     * - Dense: Archetype/Table storage (default, cache-friendly iteration)
-     * - Sparse: SparseSet storage (volatile components, fast add/remove)
-     */
+    // Per-component hint selecting archetype/Table storage (cache-friendly iteration) vs
+    // SparseSet storage (cheaper add/remove for volatile components).
     enum class StorageType : uint8_t
     {
         DENSE,
@@ -45,31 +40,8 @@ namespace queen
         }
     } // namespace detail
 
-    /**
-     * Compile-time component type information
-     *
-     * Provides static metadata about a component type including:
-     * - Type ID for runtime identification
-     * - Size and alignment for memory allocation
-     * - Trivial properties for optimization
-     * - Storage hint for archetype vs sparse storage
-     * - Lifecycle functions (construct, destruct, move, copy)
-     *
-     * Use cases:
-     * - Column/Table type-erased storage
-     * - Archetype creation and matching
-     * - Component serialization
-     *
-     * Example:
-     * @code
-     *   using Info = ComponentInfo<Position>;
-     *
-     *   void* storage = allocator.Allocate(Info::size, Info::alignment);
-     *   Info::Construct(storage);
-     *   // ...
-     *   Info::Destruct(storage);
-     * @endcode
-     */
+    // Compile-time component metadata and lifecycle thunks. Source of truth used to build
+    // type-erased ComponentMeta for Column/Table storage.
     template <typename T> struct ComponentInfo
     {
         static constexpr TypeId id = TypeIdOf<T>();
@@ -100,34 +72,16 @@ namespace queen
         }
     };
 
-    /**
-     * Runtime component metadata (type-erased)
-     *
-     * Stores component metadata in a non-template form for use in
-     * Column, Table, and other type-erased containers.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────┐
-     * │ type_id: TypeId (8 bytes)                                  │
-     * │ size: size_t (8 bytes)                                     │
-     * │ alignment: size_t (8 bytes)                                │
-     * │ storage: StorageType (1 byte) + padding (7 bytes)          │
-     * │ construct: void(*)(void*) (8 bytes)                        │
-     * │ destruct: void(*)(void*) (8 bytes)                         │
-     * │ move: void(*)(void*, void*) (8 bytes)                      │
-     * │ copy: void(*)(void*, const void*) (8 bytes)                │
-     * └────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - All operations: O(1) - function pointer call
-     *
-     * Example:
-     * @code
-     *   ComponentMeta meta = ComponentMeta::Of<Position>();
-     *   void* storage = allocator.Allocate(meta.size, meta.alignment);
-     *   meta.construct(storage);
-     * @endcode
-     */
+    // Type-erased runtime mirror of ComponentInfo<T> for use in non-template containers.
+    // Lifecycle thunks may be null when the corresponding op is trivial.
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────┐
+    // │ type_id: TypeId (8 bytes)                                  │
+    // │ size: size_t (8 bytes)                                     │
+    // │ alignment: size_t (8 bytes)                                │
+    // │ storage: StorageType (1 byte) + padding (7 bytes)          │
+    // │ construct/destruct/move/copy: function pointers (8 bytes)  │
+    // └────────────────────────────────────────────────────────────┘
     struct ComponentMeta
     {
         using ConstructFn = void (*)(void*);

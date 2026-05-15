@@ -37,11 +37,15 @@ namespace nectar
         wax::String filePath{alloc, path};
 
         FILE* file = std::fopen(filePath.CStr(), "wb");
-        if (!file)
+        if (file == nullptr)
+        {
             return false;
+        }
 
         if (content.Size() > 0)
+        {
             std::fwrite(content.CStr(), 1, content.Size(), file);
+        }
 
         std::fclose(file);
         return true;
@@ -51,8 +55,10 @@ namespace nectar
     {
         wax::String filePath{alloc, path};
         FILE* file = std::fopen(filePath.CStr(), "rb");
-        if (!file)
+        if (file == nullptr)
+        {
             return false;
+        }
 
         const int64_t fileSize = FileSize(file);
         if (fileSize <= 0)
@@ -71,7 +77,9 @@ namespace nectar
             const size_t toRead = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
             const size_t bytesRead = std::fread(buffer, 1, toRead, file);
             if (bytesRead == 0)
+            {
                 break;
+            }
             content.Append(buffer, bytesRead);
             remaining -= bytesRead;
         }
@@ -79,7 +87,9 @@ namespace nectar
 
         auto parseResult = HiveParser::Parse(content.View(), alloc);
         if (!parseResult.Success())
+        {
             return false;
+        }
 
         const auto& doc = parseResult.m_document;
 
@@ -105,11 +115,15 @@ namespace nectar
                 for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
                 {
                     if (kv.Value().m_type != HiveValue::Type::STRING)
+                    {
                         continue;
+                    }
                     const wax::StringView guid = kv.Value().AsString();
                     const AssetId id = AssetId::FromGuidString(guid.Data(), guid.Size());
                     if (!id.IsValid())
+                    {
                         continue;
+                    }
                     mat.m_textureBindings.Insert(wax::String{alloc, kv.Key().View()}, id);
                 }
             }
@@ -118,7 +132,9 @@ namespace nectar
                 for (auto kv = it.Value().Begin(); kv != it.Value().End(); ++kv)
                 {
                     if (kv.Value().m_type != HiveValue::Type::BOOL)
+                    {
                         continue;
+                    }
                     mat.m_featureOverrides.Insert(wax::String{alloc, kv.Key().View()}, kv.Value().AsBool());
                 }
             }

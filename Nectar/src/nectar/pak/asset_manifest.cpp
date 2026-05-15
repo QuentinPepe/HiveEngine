@@ -16,10 +16,14 @@ namespace nectar
         key.Append(vfsPath.Data(), vfsPath.Size());
 
         auto* existing = m_entries.Find(key);
-        if (existing)
+        if (existing != nullptr)
+        {
             *existing = hash;
+        }
         else
+        {
             m_entries.Insert(static_cast<wax::String&&>(key), hash);
+        }
     }
 
     const ContentHash* AssetManifest::Find(wax::StringView vfsPath) const
@@ -75,7 +79,9 @@ namespace nectar
         AssetManifest manifest{alloc};
 
         if (data.Size() < sizeof(uint32_t))
+        {
             return manifest;
+        }
 
         const uint8_t* ptr = data.Data();
         const uint8_t* end = ptr + data.Size();
@@ -91,7 +97,9 @@ namespace nectar
             ptr += sizeof(uint32_t);
 
             if (ptr + pathLen + sizeof(uint64_t) * 2 > end)
+            {
                 break;
+            }
 
             wax::StringView path{reinterpret_cast<const char*>(ptr), pathLen};
             ptr += pathLen;

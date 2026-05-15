@@ -10,43 +10,14 @@
 
 namespace queen
 {
-    /**
-     * Entity ID allocator with generation-based recycling
-     *
-     * Manages entity ID allocation and deallocation with generation counters
-     * to detect use-after-free. Maintains a free list for O(1) recycling.
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────┐
-     * │ generations_: [gen0, gen1, gen2, ...]  (per-index)          │
-     * │ free_list_:   [idx5, idx2, idx0]       (recycled indices)   │
-     * │ next_index_:  6                        (next fresh ID)      │
-     * └─────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Allocate: O(1)
-     * - Deallocate: O(1)
-     * - IsAlive: O(1)
-     * - Memory: O(max_allocated_entities)
-     *
-     * Limitations:
-     * - Generation wraps at 65536 deallocations of same index (rare false positives)
-     * - Not thread-safe
-     * - Generations array grows monotonically (never shrinks)
-     *
-     * Example:
-     * @code
-     *   comb::LinearAllocator alloc{1_MB};
-     *   queen::EntityAllocator<comb::LinearAllocator> allocator{alloc, 10000};
-     *
-     *   Entity e = allocator.Allocate();
-     *   // ... use entity
-     *   allocator.Deallocate(e);
-     *
-     *   Entity recycled = allocator.Allocate();  // reuses e.Index()
-     *   assert(recycled.Generation() > e.Generation());
-     * @endcode
-     */
+    // Entity ID allocator with generation-based recycling. Free list enables O(1) recycling
+    // while bumping the per-slot generation so stale entity handles are detectable.
+    // Memory layout:
+    // ┌─────────────────────────────────────────────────────────────┐
+    // │ generations_: [gen0, gen1, gen2, ...]  (per-index)          │
+    // │ free_list_:   [idx5, idx2, idx0]       (recycled, LIFO)     │
+    // │ next_index_:  next fresh slot when free_list_ is empty      │
+    // └─────────────────────────────────────────────────────────────┘
     template <comb::Allocator Allocator> class EntityAllocator
     {
     public:

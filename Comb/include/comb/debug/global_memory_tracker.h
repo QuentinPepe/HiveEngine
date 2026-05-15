@@ -1,38 +1,5 @@
-/**
- * Global Memory Tracker (Singleton)
- *
- * Engine-wide memory tracking across all allocators.
- * Provides bird's-eye view of memory usage for profiling and debugging.
- *
- * Architecture:
- * - Singleton: Single instance for entire engine
- * - Hybrid: Per-allocator registries + global aggregation
- * - Thread-safe: Protected by mutex
- * - Zero overhead: Only compiled when COMB_MEM_DEBUG=1
- *
- * Features:
- * - Register/unregister allocators
- * - Query all allocations across all allocators
- * - Engine-wide statistics (total memory, peak, breakdown by allocator)
- * - Export to JSON for visualization
- *
- * Example:
- * @code
- *   #if COMB_MEM_DEBUG
- *       // Allocators register themselves
- *       comb::debug::GlobalMemoryTracker::GetInstance().RegisterAllocator(
- *           "LinearAllocator", &registry_
- *       );
- *
- *       // Query engine-wide stats
- *       auto stats = comb::debug::GlobalMemoryTracker::GetInstance().GetGlobalStats();
- *       hive::Log("Total memory: {} bytes", stats.currentBytesUsed);
- *
- *       // Print all allocators
- *       comb::debug::GlobalMemoryTracker::GetInstance().PrintAllAllocators();
- *   #endif
- * @endcode
- */
+// Engine-wide aggregation of per-allocator registries. Compiled out when
+// COMB_MEM_DEBUG=0 so release builds pay nothing.
 
 #pragma once
 
@@ -55,9 +22,6 @@
 namespace comb::debug
 {
 
-    /**
-     * Allocator info for global tracking
-     */
     struct AllocatorInfo
     {
         const char* m_name;             // Allocator name (e.g., "LinearAllocator")
@@ -66,18 +30,10 @@ namespace comb::debug
         bool m_includeInLeakReport;     // Include in explicit live leak reporting
     };
 
-    /**
-     * Global memory tracker (singleton)
-     *
-     * Tracks all allocators in the engine for engine-wide profiling.
-     * Thread-safe singleton using Meyer's idiom.
-     */
+    // Thread-safe Meyer's singleton aggregating allocator registries.
     class GlobalMemoryTracker
     {
     public:
-        /**
-         * Get singleton instance (Meyer's singleton, thread-safe since C++11)
-         */
         HIVE_API static GlobalMemoryTracker& GetInstance();
 
         // Non-copyable, non-movable (singleton)
@@ -86,20 +42,8 @@ namespace comb::debug
         GlobalMemoryTracker(GlobalMemoryTracker&&) = delete;
         GlobalMemoryTracker& operator=(GlobalMemoryTracker&&) = delete;
 
-        // Allocator Registration
-
-        /**
-         * Register an allocator with the global tracker
-         *
-         * Allocators should register themselves in their constructor.
-         * The name should be a string literal (no ownership).
-         *
-         * @param name Allocator name (string literal)
-         * @param registry Pointer to allocator's registry
-         * @param includeInLeakReport Participate in explicit live leak reporting
-         *
-         * Thread-safe: Yes (mutex protected)
-         */
+        // Allocators call this in their constructor. name must outlive the
+        // allocator (string literal expected, not copied).
         void RegisterAllocator(const char* name, AllocationRegistry* registry, bool includeInLeakReport = true)
         {
             hive::Assert(name != nullptr, "Allocator name cannot be null");
@@ -122,15 +66,6 @@ namespace comb::debug
                            reinterpret_cast<void*>(registry));
         }
 
-        /**
-         * Unregister an allocator
-         *
-         * Allocators should unregister themselves in their destructor.
-         *
-         * @param registry Pointer to allocator's registry
-         *
-         * Thread-safe: Yes (mutex protected)
-         */
         void UnregisterAllocator(AllocationRegistry* registry)
         {
             hive::Assert(registry != nullptr, "Registry cannot be null");
@@ -151,15 +86,6 @@ namespace comb::debug
                              reinterpret_cast<void*>(registry));
         }
 
-        // Global Statistics
-
-        /**
-         * Get engine-wide aggregated statistics
-         *
-         * Sums statistics across all registered allocators.
-         *
-         * Thread-safe: Yes (mutex protected)
-         */
         [[nodiscard]] AllocationStats GetGlobalStats() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -184,20 +110,12 @@ namespace comb::debug
             return globalStats;
         }
 
-        /**
-         * Get number of registered allocators
-         */
         [[nodiscard]] size_t GetAllocatorCount() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             return m_allocators.size();
         }
 
-        // Reporting & Visualization
-
-        /**
-         * Print all registered allocators and their statistics
-         */
         void PrintAllAllocators() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -238,11 +156,6 @@ namespace comb::debug
             hive::LogInfo(comb::LOG_COMB_ROOT, "[MEM_DEBUG] ============================================");
         }
 
-        /**
-         * Print engine-wide leak report
-         *
-         * Checks all allocators for leaks and prints summary.
-         */
         void PrintLeakReport() const
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -287,11 +200,7 @@ namespace comb::debug
             }
         }
 
-        /**
-         * Print leak reports for allocators that are still alive.
-         *
-         * Call this explicitly before shutdown while logging is still alive.
-         */
+        // Call before shutdown while the logging system is still alive.
         void ReportLiveAllocatorLeaks() const
         {
             std::vector<AllocatorInfo> allocators;
@@ -334,41 +243,15 @@ namespace comb::debug
                            totalLeaks, totalLeakedBytes);
         }
 
-        /**
-         * Export all allocator stats to JSON string
-         *
-         * Generates JSON for external visualization tools.
-         *
-         * Format:
-         * {
-         *   "allocators": [
-         *     {
-         *       "name": "LinearAllocator",
-         *       "currentBytes": 1024,
-         *       "peakBytes": 2048,
-         *       "allocations": 10,
-         *       ...
-         *     }
-         *   ],
-         *   "global": {
-         *     "currentBytes": 5120,
-         *     "peakBytes": 10240,
-         *     ...
-         *   }
-         * }
-         *
-         * @return JSON string
-         */
+        // Exports per-allocator stats plus aggregated totals for external
+        // visualization tools.
         [[nodiscard]] std::string ExportToJSON() const;
 
     private:
         GlobalMemoryTracker() = default;
         ~GlobalMemoryTracker() = default;
 
-        /**
-         * Get global stats without locking (internal use only)
-         * Assumes mutex is already held by caller
-         */
+        // Caller must already hold m_mutex.
         [[nodiscard]] AllocationStats GetGlobalStatsLocked() const;
 
         std::unordered_map<std::string, AllocatorInfo> m_allocators;

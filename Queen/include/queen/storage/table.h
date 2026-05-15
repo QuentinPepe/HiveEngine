@@ -17,49 +17,18 @@
 
 namespace queen
 {
-    /**
-     * Archetype storage table
-     *
-     * Stores entities and their components in a Structure-of-Arrays layout.
-     * Each component type has its own Column for cache-friendly iteration.
-     * Entities are stored in a separate column for entity-to-row mapping.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────┐
-     * │ entities_: [Entity0, Entity1, Entity2, ...]                │
-     * │                                                            │
-     * │ columns_: HashMap<TypeId, Column>                          │
-     * │   TypeId_A -> [A0, A1, A2, ...]                            │
-     * │   TypeId_B -> [B0, B1, B2, ...]                            │
-     * │   TypeId_C -> [C0, C1, C2, ...]                            │
-     * │                                                            │
-     * │ Row i contains: entities_[i], columns_[A][i], ...          │
-     * └────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - AllocateRow: O(C) where C = number of columns
-     * - FreeRow (swap-and-pop): O(C)
-     * - GetColumn: O(1) hash lookup
-     * - Iteration: O(N) cache-friendly per column
-     *
-     * Limitations:
-     * - Fixed set of component types after construction
-     * - Not thread-safe
-     * - Swap-and-pop changes row indices
-     *
-     * Example:
-     * @code
-     *   comb::LinearAllocator alloc{1_MB};
-     *   wax::Vector<ComponentMeta, ...> metas{alloc};
-     *   metas.PushBack(ComponentMeta::Of<Position>());
-     *   metas.PushBack(ComponentMeta::Of<Velocity>());
-     *
-     *   Table table{alloc, metas, 1000};
-     *
-     *   uint32_t row = table.AllocateRow(entity);
-     *   table.GetColumn<Position>()->Get<Position>(row)->x = 1.0f;
-     * @endcode
-     */
+    // Structure-of-arrays storage for one archetype: one Column per component type plus a
+    // parallel entity column. Row indices are unstable across FreeRow (swap-and-pop).
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────┐
+    // │ entities_: [Entity0, Entity1, Entity2, ...]                │
+    // │                                                            │
+    // │ columns_: parallel arrays per component type               │
+    // │   TypeId_A -> [A0, A1, A2, ...]                            │
+    // │   TypeId_B -> [B0, B1, B2, ...]                            │
+    // │                                                            │
+    // │ Row i contains: entities_[i], columns_[A][i], ...          │
+    // └────────────────────────────────────────────────────────────┘
     template <comb::Allocator Allocator> class Table
     {
     public:
@@ -255,18 +224,9 @@ namespace queen
             return m_entities.IsEmpty();
         }
 
-        /**
-         * Move a row to another table
-         *
-         * Moves all common components from source_row in this table to dest_row in target.
-         * Components that exist only in this table are destroyed.
-         * Components that exist only in target must be initialized separately.
-         *
-         * @param source_row Row index in this table
-         * @param target Target table to move to
-         * @param dest_row Row index in target table
-         * @return Number of components moved
-         */
+        // Move components shared between this table and target from sourceRow to destRow.
+        // Components only in target are left untouched and must be initialized by the caller.
+        // Returns the number of components moved.
         size_t MoveRowTo(uint32_t sourceRow, Table& target, uint32_t destRow)
         {
             hive::Assert(sourceRow < m_entities.Size(), "Source row out of bounds");
@@ -308,9 +268,6 @@ namespace queen
             return movedCount;
         }
 
-        /**
-         * Get all TypeIds present in this table
-         */
         [[nodiscard]] wax::Vector<TypeId> GetTypeIds() const
         {
             wax::Vector<TypeId> result{*m_allocator};

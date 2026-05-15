@@ -134,7 +134,7 @@ namespace waggle
 
         // Build a name: use node name if available, otherwise "Node_N"
         char nameBuf[24];
-        if (node->name && node->name[0] != '\0')
+        if (node->name != nullptr && node->name[0] != '\0')
         {
             std::snprintf(nameBuf, sizeof(nameBuf), "%s", node->name);
         }
@@ -147,12 +147,12 @@ namespace waggle
             ctx.world.Spawn(Name{wax::FixedString{nameBuf}}, std::move(transform), WorldMatrix{}, TransformVersion{});
         ++ctx.result.m_entityCount;
 
-        if (node->mesh)
+        if (node->mesh != nullptr)
         {
             auto meshIndex = static_cast<int32_t>(node->mesh - ctx.gltfData->meshes);
 
             wax::FixedString meshName{};
-            if (node->mesh->name && node->mesh->name[0] != '\0')
+            if (node->mesh->name != nullptr && node->mesh->name[0] != '\0')
             {
                 meshName = wax::FixedString{node->mesh->name};
             }
@@ -173,15 +173,15 @@ namespace waggle
 
                 MeshReference meshRef{};
                 meshRef.m_meshName = meshName;
-                meshRef.m_indexCount = prim.indices ? static_cast<uint32_t>(prim.indices->count) : 0;
+                meshRef.m_indexCount = prim.indices != nullptr ? static_cast<uint32_t>(prim.indices->count) : 0;
                 meshRef.m_meshIndex = meshIndex;
 
-                if (prim.material)
+                if (prim.material != nullptr)
                 {
                     auto matIdx = static_cast<int32_t>(prim.material - ctx.gltfData->materials);
                     meshRef.m_materialIndex = matIdx;
                     char hmatPath[128];
-                    if (prim.material->name && prim.material->name[0] != '\0')
+                    if (prim.material->name != nullptr && prim.material->name[0] != '\0')
                     {
                         std::snprintf(hmatPath, sizeof(hmatPath), "%s/%s.hmat", ctx.modelDir, prim.material->name);
                     }
@@ -200,7 +200,7 @@ namespace waggle
             }
         }
 
-        if (node->camera)
+        if (node->camera != nullptr)
         {
             if (node->camera->type == cgltf_camera_type_perspective)
             {
@@ -214,7 +214,7 @@ namespace waggle
             }
         }
 
-        if (node->light)
+        if (node->light != nullptr)
         {
             if (node->light->type == cgltf_light_type_directional)
             {
@@ -276,20 +276,30 @@ namespace waggle
             auto backslashPos = modelDirStr.RFind('\\');
             size_t lastSlash = wax::String::npos;
             if (slashPos != wax::String::npos && backslashPos != wax::String::npos)
+            {
                 lastSlash = slashPos > backslashPos ? slashPos : backslashPos;
+            }
             else if (slashPos != wax::String::npos)
+            {
                 lastSlash = slashPos;
+            }
             else
+            {
                 lastSlash = backslashPos;
+            }
             if (lastSlash != wax::String::npos)
+            {
                 modelDirStr = wax::String{modelDirStr.View().Substr(0, lastSlash)};
+            }
             else
+            {
                 modelDirStr.Clear();
+            }
         }
 
         SceneLoadContext ctx{world, result, gltfData, modelDirStr.CStr()};
 
-        cgltf_size sceneIdx = gltfData->scene ? static_cast<cgltf_size>(gltfData->scene - gltfData->scenes) : 0;
+        cgltf_size sceneIdx = gltfData->scene != nullptr ? static_cast<cgltf_size>(gltfData->scene - gltfData->scenes) : 0;
         if (sceneIdx < gltfData->scenes_count)
         {
             const cgltf_scene& scene = gltfData->scenes[sceneIdx];
@@ -310,11 +320,17 @@ namespace waggle
             auto backslashPos = dirPath.RFind('\\');
             size_t lastSlash = wax::String::npos;
             if (slashPos != wax::String::npos && backslashPos != wax::String::npos)
+            {
                 lastSlash = slashPos > backslashPos ? slashPos : backslashPos;
+            }
             else if (slashPos != wax::String::npos)
+            {
                 lastSlash = slashPos;
+            }
             else
+            {
                 lastSlash = backslashPos;
+            }
             if (lastSlash != wax::String::npos)
             {
                 dirPath = wax::String{dirPath.View().Substr(0, lastSlash)};
@@ -329,7 +345,9 @@ namespace waggle
 
                 nectar::HiveValue baseColor = nectar::HiveValue::MakeFloatArray(alloc);
                 for (size_t i = 0; i < 4; ++i)
+                {
                     baseColor.PushFloat(static_cast<double>(src.m_baseColorFactor[i]));
+                }
                 matData.m_paramOverrides.Insert(wax::String{alloc, wax::StringView{"base_color"}},
                                                 static_cast<nectar::HiveValue&&>(baseColor));
                 matData.m_paramOverrides.Insert(
@@ -340,7 +358,9 @@ namespace waggle
                     nectar::HiveValue::MakeFloat(static_cast<double>(src.m_roughnessFactor)));
 
                 if (src.m_doubleSided)
+                {
                     matData.m_featureOverrides.Insert(wax::String{alloc, wax::StringView{"double_sided"}}, true);
+                }
                 if (src.m_alphaCutoff > 0.f)
                 {
                     matData.m_featureOverrides.Insert(wax::String{alloc, wax::StringView{"alpha_test"}}, true);
@@ -364,7 +384,9 @@ namespace waggle
 
                 std::error_code fsEc;
                 if (std::filesystem::exists(matPath.CStr(), fsEc))
+                {
                     continue;
+                }
 
                 if (nectar::SaveMaterial(matData, matPath.View(), alloc))
                 {

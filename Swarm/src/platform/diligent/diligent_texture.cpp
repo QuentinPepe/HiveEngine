@@ -90,7 +90,7 @@ namespace swarm
 
         RefCntAutoPtr<ITexture> tex;
         context->m_device->CreateTexture(td, &data, &tex);
-        if (!tex)
+        if (tex == nullptr)
         {
             hive::LogError(LOG_SWARM, "CreateTexture: device->CreateTexture failed");
             return nullptr;
@@ -101,18 +101,26 @@ namespace swarm
         texture->m_texture = tex.Detach();
         texture->m_shaderView = texture->m_texture->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE);
         if (texture->m_shaderView != nullptr)
+        {
             texture->m_shaderView->AddRef();
+        }
         return texture;
     }
 
     void DestroyTexture(Texture* texture)
     {
         if (texture == nullptr)
+        {
             return;
+        }
         if (texture->m_shaderView != nullptr)
+        {
             texture->m_shaderView->Release();
+        }
         if (texture->m_texture != nullptr)
+        {
             texture->m_texture->Release();
+        }
         auto& allocator = SwarmModule::GetInstance().GetAllocator();
         comb::Delete(allocator, texture);
     }

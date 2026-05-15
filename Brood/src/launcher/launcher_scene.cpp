@@ -29,6 +29,7 @@
 #include <waggle/components/name.h>
 #include <waggle/components/transform.h>
 #include <waggle/project/project_manager.h>
+#include <waggle/scene/scene_io.h>
 #include <waggle/time.h>
 
 #include <forge/scene_file.h>
@@ -41,25 +42,6 @@
 
 namespace brood::launcher
 {
-
-    void RegisterSceneComponentTypes(LauncherState& state)
-    {
-        auto& registry = state.m_componentRegistry;
-        if (!registry.Contains<waggle::Transform>())
-            registry.Register<waggle::Transform>();
-        if (!registry.Contains<waggle::Camera>())
-            registry.Register<waggle::Camera>();
-        if (!registry.Contains<waggle::DirectionalLight>())
-            registry.Register<waggle::DirectionalLight>();
-        if (!registry.Contains<waggle::AmbientLight>())
-            registry.Register<waggle::AmbientLight>();
-        if (!registry.Contains<waggle::Name>())
-            registry.Register<waggle::Name>();
-        if (!registry.Contains<waggle::MeshReference>())
-            registry.Register<waggle::MeshReference>();
-        if (!registry.Contains<propolis::PropolisScript>())
-            registry.Register<propolis::PropolisScript>();
-    }
 
     void SpawnEditorBaseCamera(queen::World& world)
     {

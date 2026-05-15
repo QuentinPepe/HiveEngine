@@ -43,9 +43,13 @@ namespace waggle
         {
             UpdateTimeResource();
             if (m_jobs.IsValid())
+            {
                 m_world.AdvanceParallel(m_jobs);
+            }
             else
+            {
                 m_world.Advance();
+            }
 
             m_accumulator -= m_config.m_fixedDtNs;
             m_simTime += m_config.m_fixedDtNs;

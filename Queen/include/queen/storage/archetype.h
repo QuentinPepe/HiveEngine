@@ -32,45 +32,18 @@ namespace queen
         }
     } // namespace detail
 
-    /**
-     * Archetype definition and storage
-     *
-     * An archetype represents a unique combination of component types.
-     * All entities with the exact same set of components share the same archetype.
-     * The archetype owns its Table which stores the actual component data.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────┐
-     * │ id_: ArchetypeId (hash of sorted TypeIds)                  │
-     * │ component_types_: sorted [TypeId_A, TypeId_B, ...]         │
-     * │ component_metas_: [Meta_A, Meta_B, ...]                    │
-     * │ table_: Table<Allocator> (owns component storage)          │
-     * │ add_edges_: HashMap<TypeId, Archetype*> (transitions)      │
-     * │ remove_edges_: HashMap<TypeId, Archetype*> (transitions)   │
-     * └────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - HasComponent: O(log N) binary search on sorted types
-     * - GetColumnIndex: O(log N) binary search
-     * - Edge lookup: O(1) hash map
-     * - Entity count: O(1)
-     *
-     * Limitations:
-     * - Component set is fixed after construction
-     * - Not thread-safe
-     *
-     * Example:
-     * @code
-     *   wax::Vector<ComponentMeta, ...> metas{alloc};
-     *   metas.PushBack(ComponentMeta::Of<Position>());
-     *   metas.PushBack(ComponentMeta::Of<Velocity>());
-     *
-     *   Archetype arch{alloc, metas};
-     *
-     *   uint32_t row = arch.AllocateRow(entity);
-     *   arch.SetComponent<Position>(row, Position{1.0f, 2.0f, 3.0f});
-     * @endcode
-     */
+    // A unique combination of component types backed by a Table. Component types are sorted
+    // so the ArchetypeId (FNV-1a over the sorted ids) is canonical regardless of insertion
+    // order. Add/remove edges cache structural transitions to neighbouring archetypes.
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────┐
+    // │ id_:             ArchetypeId (hash of sorted TypeIds)      │
+    // │ componentTypes_: sorted [TypeId_A, TypeId_B, ...]          │
+    // │ componentMetas_: parallel [Meta_A, Meta_B, ...]            │
+    // │ table_:          owns the per-row component storage        │
+    // │ addEdges_:       HashMap<TypeId, Archetype*> transitions   │
+    // │ removeEdges_:    HashMap<TypeId, Archetype*> transitions   │
+    // └────────────────────────────────────────────────────────────┘
     template <comb::Allocator Allocator> class Archetype
     {
     public:

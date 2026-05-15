@@ -30,28 +30,38 @@ namespace nectar
     {
         std::ifstream file{path, std::ios::binary | std::ios::ate};
         if (!file)
+        {
             return false;
+        }
 
         auto file_size = file.tellg();
         if (file_size < 12)
+        {
             return false;
+        }
 
         file.seekg(0);
         wax::ByteBuffer buf{alloc, static_cast<size_t>(file_size)};
         buf.Resize(static_cast<size_t>(file_size));
         file.read(reinterpret_cast<char*>(buf.Data()), file_size);
         if (!file)
+        {
             return false;
+        }
 
         wax::BinaryReader reader{buf.View()};
 
         uint32_t magic{};
         if (!reader.TryRead(magic) || magic != kImportCacheMagic)
+        {
             return false;
+        }
 
         uint16_t version{};
         if (!reader.TryRead(version) || version != kImportCacheVersion)
+        {
             return false;
+        }
 
         reader.Skip(2);
 
@@ -60,7 +70,9 @@ namespace nectar
         for (uint32_t i = 0; i < count; ++i)
         {
             if (reader.Remaining() < 16)
+            {
                 break;
+            }
 
             uint64_t id_high = reader.Read<uint64_t>();
             uint64_t id_low = reader.Read<uint64_t>();
@@ -78,7 +90,9 @@ namespace nectar
 
             uint32_t label_count = reader.Read<uint32_t>();
             for (uint32_t j = 0; j < label_count; ++j)
+            {
                 (void)reader.ReadString();
+            }
 
             AssetRecord record{};
             record.m_uuid = AssetId{id_high, id_low};
@@ -128,7 +142,9 @@ namespace nectar
         auto span = writer.View();
         std::ofstream file{path, std::ios::binary};
         if (!file)
+        {
             return false;
+        }
 
         file.write(reinterpret_cast<const char*>(span.Data()), static_cast<std::streamsize>(span.Size()));
         return file.good();

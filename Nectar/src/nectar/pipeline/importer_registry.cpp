@@ -11,8 +11,10 @@ namespace nectar
 
     void ImporterRegistry::Register(IAssetImporter* importer)
     {
-        if (!importer)
+        if (importer == nullptr)
+        {
             return;
+        }
 
         auto exts = importer->SourceExtensions();
         for (size_t i = 0; i < exts.Size(); ++i)
@@ -23,16 +25,22 @@ namespace nectar
             {
                 char ch = raw[c];
                 if (ch >= 'A' && ch <= 'Z')
+                {
                     ch = static_cast<char>(ch + ('a' - 'A'));
+                }
                 key.Append(ch);
             }
 
             // Overwrite if already registered
             auto* existing = m_extensionMap.Find(key);
-            if (existing)
+            if (existing != nullptr)
+            {
                 *existing = importer;
+            }
             else
+            {
                 m_extensionMap.Insert(static_cast<wax::String&&>(key), importer);
+            }
         }
     }
 
@@ -43,21 +51,27 @@ namespace nectar
         {
             char ch = extension[i];
             if (ch >= 'A' && ch <= 'Z')
+            {
                 ch = static_cast<char>(ch + ('a' - 'A'));
+            }
             key.Append(ch);
         }
 
         auto* found = m_extensionMap.Find(key);
-        return found ? *found : nullptr;
+        return found != nullptr ? *found : nullptr;
     }
 
     IAssetImporter* ImporterRegistry::FindByPath(wax::StringView path) const
     {
         if (path.Size() == 0)
+        {
             return nullptr;
+        }
         auto ext = PathExtension(path);
         if (ext.Size() == 0)
+        {
             return nullptr;
+        }
         return FindByExtension(ext);
     }
 

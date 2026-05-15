@@ -16,6 +16,7 @@ target_sources(Waggle
         src/waggle/systems/propolis_system.cpp
         src/waggle/systems/mesh_render_system.cpp
         src/waggle/systems/editor_camera_system.cpp
+        src/waggle/systems/debug_freecam_system.cpp
         src/waggle/systems/gizmo_render_system.cpp
         src/waggle/math/ray_intersect.cpp
         src/waggle/render/render_module.cpp
@@ -26,6 +27,7 @@ target_sources(Waggle
         src/waggle/project/cmake_generator.cpp
         src/waggle/project/project_scaffolder.cpp
         src/waggle/scene/gltf_scene_loader.cpp
+        src/waggle/scene/scene_io.cpp
         src/waggle/disabled_propagation.cpp
 )
 

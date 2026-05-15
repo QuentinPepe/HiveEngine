@@ -10,18 +10,24 @@ namespace nectar
 
     void CookerRegistry::Register(IAssetCooker* cooker)
     {
-        if (!cooker)
+        if (cooker == nullptr)
+        {
             return;
+        }
 
         auto name = cooker->TypeName();
         wax::String key{*m_alloc};
         key.Append(name.Data(), name.Size());
 
         auto* existing = m_typeMap.Find(key);
-        if (existing)
+        if (existing != nullptr)
+        {
             *existing = cooker;
+        }
         else
+        {
             m_typeMap.Insert(static_cast<wax::String&&>(key), cooker);
+        }
     }
 
     IAssetCooker* CookerRegistry::FindByType(wax::StringView typeName) const
@@ -30,7 +36,7 @@ namespace nectar
         key.Append(typeName.Data(), typeName.Size());
 
         auto* found = m_typeMap.Find(key);
-        return found ? *found : nullptr;
+        return found != nullptr ? *found : nullptr;
     }
 
     size_t CookerRegistry::Count() const noexcept

@@ -103,7 +103,9 @@ namespace nectar
                 {
                     const auto& prim = mesh.primitives[pi];
                     if (prim.type != cgltf_primitive_type_triangles)
+                    {
                         continue;
+                    }
                     const cgltf_accessor* posAcc = nullptr;
                     for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai)
                     {
@@ -113,12 +115,16 @@ namespace nectar
                             break;
                         }
                     }
-                    if (posAcc)
+                    if (posAcc != nullptr)
+                    {
                         totalVerts += static_cast<size_t>(posAcc->count);
+                    }
                 }
             }
             if (totalVerts > 0)
+            {
                 vertices.Reserve(totalVerts);
+            }
         }
 
         float aabbMin[3] = {1e30f, 1e30f, 1e30f};
@@ -134,7 +140,9 @@ namespace nectar
 
                 // Only triangles
                 if (prim.type != cgltf_primitive_type_triangles)
+                {
                     continue;
+                }
 
                 // Find attribute accessors
                 const cgltf_accessor* posAcc = nullptr;
@@ -147,29 +155,45 @@ namespace nectar
                 {
                     const auto& attr = prim.attributes[ai];
                     if (attr.type == cgltf_attribute_type_position)
+                    {
                         posAcc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_normal)
+                    {
                         normAcc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
+                    {
                         uvAcc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_color && attr.index == 0)
+                    {
                         colorAcc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_tangent)
+                    {
                         tanAcc = attr.data;
+                    }
                 }
 
-                if (!posAcc)
+                if (posAcc == nullptr)
+                {
                     continue;
+                }
 
                 // Material index (offset in data->materials array)
                 int matId = -1;
-                if (prim.material)
+                if (prim.material != nullptr)
+                {
                     matId = static_cast<int>(prim.material - data->materials);
+                }
 
                 // Base color factor from PBR material
                 float baseColor[4] = {1.f, 1.f, 1.f, 1.f};
-                if (prim.material && prim.material->has_pbr_metallic_roughness)
+                if (prim.material != nullptr && prim.material->has_pbr_metallic_roughness)
+                {
                     std::memcpy(baseColor, prim.material->pbr_metallic_roughness.base_color_factor, 4 * sizeof(float));
+                }
 
                 uint32_t baseVertex = static_cast<uint32_t>(vertices.Size());
                 auto vertCount = static_cast<cgltf_size>(posAcc->count);
@@ -189,13 +213,17 @@ namespace nectar
                     for (int a = 0; a < 3; ++a)
                     {
                         if (vert.m_position[a] < aabbMin[a])
+                        {
                             aabbMin[a] = vert.m_position[a];
+                        }
                         if (vert.m_position[a] > aabbMax[a])
+                        {
                             aabbMax[a] = vert.m_position[a];
+                        }
                     }
 
                     // Normal
-                    if (normAcc)
+                    if (normAcc != nullptr)
                     {
                         float norm[3] = {};
                         cgltf_accessor_read_float(normAcc, vi, norm, 3);
@@ -205,7 +233,7 @@ namespace nectar
                     }
 
                     // UV
-                    if (uvAcc)
+                    if (uvAcc != nullptr)
                     {
                         float uv[2] = {};
                         cgltf_accessor_read_float(uvAcc, vi, uv, 2);
@@ -214,7 +242,7 @@ namespace nectar
                     }
 
                     // Vertex color from attribute, or material base color
-                    if (colorAcc)
+                    if (colorAcc != nullptr)
                     {
                         float col[4] = {1.f, 1.f, 1.f, 1.f};
                         cgltf_accessor_read_float(colorAcc, vi, col, 4);
@@ -225,7 +253,7 @@ namespace nectar
                         vert.m_color = PackRGBA8(baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
                     }
 
-                    if (tanAcc)
+                    if (tanAcc != nullptr)
                     {
                         cgltf_accessor_read_float(tanAcc, vi, vert.m_tangent, 4);
                     }
@@ -236,9 +264,11 @@ namespace nectar
                 // Extract indices — emplace with bigAlloc so per-material index buffers
                 // use the large transient allocator instead of the global default.
                 if (matIndices.Find(matId) == nullptr)
+                {
                     matIndices.Emplace(matId, bigAlloc);
+                }
                 auto& idxBuf = *matIndices.Find(matId);
-                if (prim.indices)
+                if (prim.indices != nullptr)
                 {
                     for (cgltf_size ii = 0; ii < prim.indices->count; ++ii)
                     {
@@ -249,14 +279,16 @@ namespace nectar
                 else
                 {
                     for (uint32_t vi = 0; vi < static_cast<uint32_t>(vertCount); ++vi)
+                    {
                         idxBuf.PushBack(baseVertex + vi);
+                    }
                 }
 
                 // Generate face normals if source has none
-                if (!normAcc && genNormals)
+                if (normAcc == nullptr && genNormals)
                 {
                     size_t idxEnd = idxBuf.Size();
-                    size_t idxStart = idxEnd - (prim.indices ? prim.indices->count : vertCount);
+                    size_t idxStart = idxEnd - (prim.indices != nullptr ? prim.indices->count : vertCount);
                     size_t triCount = (idxEnd - idxStart) / 3;
 
                     for (size_t ti = 0; ti < triCount; ++ti)
@@ -298,10 +330,10 @@ namespace nectar
                 }
 
                 // Generate tangents from UV derivatives when not provided by glTF
-                if (!tanAcc && genTangents && uvAcc && (normAcc || genNormals))
+                if (tanAcc == nullptr && genTangents && uvAcc != nullptr && (normAcc != nullptr || genNormals))
                 {
                     size_t idxEnd = idxBuf.Size();
-                    size_t idxStart = idxEnd - (prim.indices ? prim.indices->count : vertCount);
+                    size_t idxStart = idxEnd - (prim.indices != nullptr ? prim.indices->count : vertCount);
                     size_t triCount = (idxEnd - idxStart) / 3;
 
                     // Accumulate per-vertex tangent/bitangent
@@ -334,7 +366,9 @@ namespace nectar
 
                         float det = duv1[0] * duv2[1] - duv2[0] * duv1[1];
                         if (std::fabs(det) < 1e-8f)
+                        {
                             continue;
+                        }
 
                         float f = 1.0f / det;
 
@@ -413,13 +447,17 @@ namespace nectar
         for (auto&& [mat_id, idx_buf] : matIndices)
         {
             if (idx_buf.IsEmpty())
+            {
                 continue;
+            }
             SubMesh sub{};
             sub.m_indexOffset = static_cast<uint32_t>(indices.Size());
             sub.m_indexCount = static_cast<uint32_t>(idx_buf.Size());
             sub.m_materialIndex = mat_id;
             for (size_t i = 0; i < idx_buf.Size(); ++i)
+            {
                 indices.PushBack(idx_buf[i]);
+            }
             submeshes.PushBack(sub);
         }
 
@@ -434,9 +472,13 @@ namespace nectar
                 for (int a = 0; a < 3; ++a)
                 {
                     if (vertices[vi].m_position[a] < smin[a])
+                    {
                         smin[a] = vertices[vi].m_position[a];
+                    }
                     if (vertices[vi].m_position[a] > smax[a])
+                    {
                         smax[a] = vertices[vi].m_position[a];
+                    }
                 }
             }
             std::memcpy(sub.m_aabbMin, smin, sizeof(smin));
@@ -450,8 +492,10 @@ namespace nectar
             for (cgltf_size mi = 0; mi < data->materials_count; ++mi)
             {
                 const char* matName = data->materials[mi].name;
-                if (!matName || matName[0] == '\0')
+                if (matName == nullptr || matName[0] == '\0')
+                {
                     continue;
+                }
 
                 wax::String matVfsPath;
                 matVfsPath.Append(vfsDir.Data(), vfsDir.Size());
@@ -460,7 +504,9 @@ namespace nectar
 
                 AssetId matId = context.ResolveByPath(matVfsPath.View());
                 if (matId.IsValid())
+                {
                     context.DeclareBuildDep(matId);
+                }
             }
         }
 

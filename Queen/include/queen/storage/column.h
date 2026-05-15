@@ -13,48 +13,16 @@
 
 namespace queen
 {
-    /**
-     * Type-erased component array
-     *
-     * Stores components of a single type in a contiguous, aligned array.
-     * Used by Table to store one column per component type. Supports
-     * type-erased operations via ComponentMeta function pointers.
-     *
-     * Memory layout:
-     * ┌────────────────────────────────────────────────────────────┐
-     * │ data_: aligned byte array                                  │
-     * │   [Component0, Component1, Component2, ...]                │
-     * │                                                            │
-     * │ ticks_: ComponentTicks array (for change detection)        │
-     * │   [Ticks0, Ticks1, Ticks2, ...]                            │
-     * │                                                            │
-     * │ Each component at: data_ + (index * stride_)               │
-     * │ Stride includes alignment padding                          │
-     * └────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Push: O(1) amortized (may reallocate)
-     * - Pop: O(1)
-     * - SwapRemove: O(1)
-     * - Get: O(1) - direct index access
-     * - Memory: O(capacity * component_size)
-     *
-     * Limitations:
-     * - Single component type per column
-     * - Not thread-safe
-     * - Requires ComponentMeta for lifecycle operations
-     *
-     * Example:
-     * @code
-     *   comb::LinearAllocator alloc{1_MB};
-     *   Column column{alloc, ComponentMeta::Of<Position>(), 100};
-     *
-     *   Position pos{1.0f, 2.0f, 3.0f};
-     *   column.PushCopy(&pos);
-     *
-     *   Position* p = column.Get<Position>(0);
-     * @endcode
-     */
+    // Type-erased contiguous array of one component type, paired with a parallel
+    // ComponentTicks array for change detection. Lifecycle ops route through ComponentMeta.
+    // Memory layout:
+    // ┌────────────────────────────────────────────────────────────┐
+    // │ data_:  aligned bytes at stride meta.m_size                │
+    // │   [Component0, Component1, Component2, ...]                │
+    // │                                                            │
+    // │ ticks_: parallel ComponentTicks array                      │
+    // │   [Ticks0, Ticks1, Ticks2, ...]                            │
+    // └────────────────────────────────────────────────────────────┘
     template <comb::Allocator Allocator> class Column
     {
     public:
@@ -359,9 +327,6 @@ namespace queen
             return m_meta;
         }
 
-        /**
-         * Get ticks for a component at the given index
-         */
         [[nodiscard]] ComponentTicks& GetTicks(size_t index) noexcept
         {
             hive::Assert(index < m_size, "Index out of bounds");
@@ -374,9 +339,6 @@ namespace queen
             return m_ticks[index];
         }
 
-        /**
-         * Get raw ticks array
-         */
         [[nodiscard]] ComponentTicks* TicksData() noexcept
         {
             return m_ticks;
@@ -386,9 +348,6 @@ namespace queen
             return m_ticks;
         }
 
-        /**
-         * Mark component as changed at the given tick
-         */
         void MarkChanged(size_t index, Tick currentTick) noexcept
         {
             hive::Assert(index < m_size, "Index out of bounds");

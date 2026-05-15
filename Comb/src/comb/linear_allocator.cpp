@@ -31,14 +31,14 @@ namespace comb
     LinearAllocator::~LinearAllocator()
     {
 #if COMB_MEM_DEBUG
-        if (m_registry)
+        if (m_registry != nullptr)
         {
-            // LinearAllocator has no individual deallocation  leaks at destruction are expected
+            // No leak report: LinearAllocator never frees individually, so live allocations at dtor are expected.
             debug::GlobalMemoryTracker::GetInstance().UnregisterAllocator(m_registry.get());
         }
 #endif
 
-        if (m_base)
+        if (m_base != nullptr)
         {
             FreePages(m_base, m_capacity);
             m_base = nullptr;
@@ -56,9 +56,7 @@ namespace comb
         , m_releaseCurrent{other.m_releaseCurrent}
 #endif
     {
-        // Note: m_registry and m_history are automatically moved via unique_ptr
-        // No need to update global tracker - it still points to the same registry object
-
+        // unique_ptr move keeps registry identity, so the global tracker stays valid.
         other.m_base = nullptr;
         other.m_current = nullptr;
         other.m_capacity = 0;
@@ -72,20 +70,17 @@ namespace comb
         if (this != &other)
         {
 #if COMB_MEM_DEBUG
-            if (m_registry)
+            if (m_registry != nullptr)
             {
-                // Report leaks for our current allocations before we destroy them
                 if constexpr (debug::kLeakDetectionEnabled)
                 {
                     m_registry->ReportLeaks(GetName());
                 }
-
-                // Unregister from global tracker
                 debug::GlobalMemoryTracker::GetInstance().UnregisterAllocator(m_registry.get());
             }
 #endif
 
-            if (m_base)
+            if (m_base != nullptr)
             {
                 FreePages(m_base, m_capacity);
             }
@@ -95,11 +90,9 @@ namespace comb
             m_capacity = other.m_capacity;
 
 #if COMB_MEM_DEBUG
-            // Move the debug tracking objects
             m_registry = std::move(other.m_registry);
             m_history = std::move(other.m_history);
             m_releaseCurrent = other.m_releaseCurrent;
-            // No need to re-register - global tracker still points to same registry object
 #endif
 
             other.m_base = nullptr;
@@ -118,7 +111,7 @@ namespace comb
 #if COMB_MEM_DEBUG
         void* result = AllocateDebug(size, alignment, tag);
 #else
-        (void)tag; // Suppress unused warning in release
+        (void)tag;
 
         hive::Assert(IsPowerOfTwo(alignment), "Alignment must be a power of 2");
         hive::Assert(size > 0, "Cannot allocate 0 bytes");
@@ -147,7 +140,7 @@ namespace comb
 #if COMB_MEM_DEBUG
         DeallocateDebug(ptr);
 #else
-        (void)ptr; // LinearAllocator doesn't support individual deallocation
+        (void)ptr;
 #endif
     }
 
@@ -156,10 +149,9 @@ namespace comb
         m_current = m_base;
 
 #if COMB_MEM_DEBUG
-        m_releaseCurrent = m_base; // Reset virtual release pointer
+        m_releaseCurrent = m_base;
 
-        // Clear debug tracking registry
-        if (m_registry)
+        if (m_registry != nullptr)
         {
             m_registry->Clear();
         }
@@ -182,15 +174,13 @@ namespace comb
         m_current = marker;
 
 #if COMB_MEM_DEBUG
-        // Recalculate virtual release pointer based on allocations before marker
-        if (m_registry)
+        // Rebuild m_releaseCurrent from registered allocations so GetUsedMemory() reports
+        // the guard-free offset the marker would have had in release mode.
+        if (m_registry != nullptr)
         {
-            // Sum up user bytes + padding for all allocations before marker
-            // This recreates what m_releaseCurrent would be at this marker position
             size_t releaseOffset = m_registry->CalculateBytesUsedUpTo(marker);
             m_releaseCurrent = static_cast<std::byte*>(m_base) + releaseOffset;
 
-            // Clear allocations from marker onwards
             m_registry->ClearAllocationsFrom(marker);
         }
 #endif
@@ -199,11 +189,9 @@ namespace comb
     size_t LinearAllocator::GetUsedMemory() const noexcept
     {
 #if COMB_MEM_DEBUG
-        // In debug mode, return virtual release pointer offset
-        // This tracks what m_current would be without guard bytes
+        // Virtual release offset excludes guard bytes — keeps stats consistent across debug/release.
         return reinterpret_cast<uintptr_t>(m_releaseCurrent) - reinterpret_cast<uintptr_t>(m_base);
 #else
-        // In release mode, return actual bytes consumed (includes padding naturally)
         return reinterpret_cast<uintptr_t>(m_current) - reinterpret_cast<uintptr_t>(m_base);
 #endif
     }
@@ -226,12 +214,11 @@ namespace comb
         hive::Assert(IsPowerOfTwo(alignment), "Alignment must be a power of 2");
         hive::Assert(size > 0, "Cannot allocate 0 bytes");
 
-        // 1. Calculate space needed (user size + guard bytes)
         const size_t guardSize = sizeof(uint32_t);
         const size_t totalSize = size + 2 * guardSize;
 
-        // 2. Align the USER pointer (after front guard), not the raw pointer
-        //    Layout: [GUARD_FRONT (4B)][user data (aligned)][GUARD_BACK (4B)]
+        // Align the USER pointer (after front guard), not the raw pointer — alignment contract is on user data.
+        // Layout: [GUARD_FRONT (4B)][user data (aligned)][GUARD_BACK (4B)]
         const uintptr_t currentAddr = reinterpret_cast<uintptr_t>(m_current);
         const uintptr_t userAddrUnaligned = currentAddr + guardSize;
         const uintptr_t userAddrAligned = AlignUp(userAddrUnaligned, alignment);
@@ -245,32 +232,29 @@ namespace comb
         if (required > remaining)
         {
             hive::LogError(comb::LOG_COMB_ROOT, "[MEM_DEBUG] [{}] Allocation failed: size={}, alignment={}, tag={}",
-                           GetName(), size, alignment, tag ? tag : "<no tag>");
+                           GetName(), size, alignment, (tag != nullptr) ? tag : "<no tag>");
             return nullptr;
         }
 
         void* rawPtr = reinterpret_cast<void*>(rawAddr);
         m_current = reinterpret_cast<void*>(rawAddr + totalSize);
 
-        // Advance virtual release pointer as if we were in release mode (no guard bytes)
+        // Advance virtual release pointer as if we were in release mode (no guard bytes).
         const uintptr_t releaseAddr = reinterpret_cast<uintptr_t>(m_releaseCurrent);
         const uintptr_t releaseAligned = AlignUp(releaseAddr, alignment);
         m_releaseCurrent = reinterpret_cast<void*>(releaseAligned + size);
 
-        // 3. Write guard bytes
         debug::WriteGuard(rawPtr);
 
         void* userPtr = reinterpret_cast<void*>(userAddrAligned);
 
         debug::WriteGuard(static_cast<std::byte*>(userPtr) + size);
 
-        // 4. Initialize memory with pattern (detect uninitialized reads)
         if constexpr (debug::kMemDebugEnabled)
         {
             std::memset(userPtr, debug::allocatedMemoryPattern, size);
         }
 
-        // 5. Register allocation
         debug::AllocationInfo info{};
         info.m_address = userPtr;
         info.m_size = size;
@@ -286,7 +270,6 @@ namespace comb
 
         m_registry->RegisterAllocation(info);
 
-        // 6. Record in history
 #if COMB_MEM_DEBUG_HISTORY
         m_history->RecordAllocation(info);
 #endif
@@ -296,13 +279,12 @@ namespace comb
 
     void LinearAllocator::DeallocateDebug(void* ptr)
     {
-        // LinearAllocator doesn't support individual deallocation
-        // But we still track it for debugging purposes
-
-        if (!ptr)
+        // LinearAllocator never frees individually — this path only updates debug tracking.
+        if (ptr == nullptr)
+        {
             return;
+        }
 
-        // 1. Find allocation info
         auto infoOpt = m_registry->FindAllocation(ptr);
         if (!infoOpt)
         {
@@ -312,7 +294,6 @@ namespace comb
         }
         auto& info = *infoOpt;
 
-        // 2. Check guard bytes
         if constexpr (debug::kMemDebugEnabled)
         {
             if (!info.CheckGuards())
@@ -335,21 +316,15 @@ namespace comb
             }
         }
 
-        // 3. Fill with freed pattern (detect use-after-free)
 #if COMB_MEM_DEBUG_USE_AFTER_FREE
         std::memset(ptr, debug::freedMemoryPattern, info.m_size);
 #endif
 
-        // 4. Record deallocation in history
 #if COMB_MEM_DEBUG_HISTORY
         m_history->RecordDeallocation(ptr, info.m_size);
 #endif
 
-        // 5. Unregister allocation
         m_registry->UnregisterAllocation(ptr);
-
-        // NOTE: LinearAllocator doesn't actually free individual allocations
-        // Memory is only freed on Reset() or destruction
     }
 
 #endif // COMB_MEM_DEBUG

@@ -31,15 +31,42 @@ namespace forge
 {
     static QColor CategoryColor(const char* category)
     {
-        if (std::strcmp(category, "Math") == 0)       return {0x4a, 0x7a, 0x4a};
-        if (std::strcmp(category, "Logic") == 0)      return {0x2a, 0x6e, 0xa8};
-        if (std::strcmp(category, "Conversion") == 0) return {0x6a, 0x4a, 0x7a};
-        if (std::strcmp(category, "Event") == 0)      return {0xa8, 0x2a, 0x2a};
-        if (std::strcmp(category, "Flow") == 0)       return {0x88, 0x88, 0x88};
-        if (std::strcmp(category, "Variable") == 0)   return {0xa8, 0x6e, 0x2a};
-        if (std::strcmp(category, "Component") == 0)  return {0x2a, 0x9a, 0xa8};
-        if (std::strcmp(category, "Utility") == 0)    return {0x70, 0x70, 0x70};
-        if (std::strcmp(category, "Debug") == 0)      return {0xa8, 0x6e, 0xa8};
+        if (std::strcmp(category, "Math") == 0)
+        {
+            return {0x4a, 0x7a, 0x4a};
+        }
+        if (std::strcmp(category, "Logic") == 0)
+        {
+            return {0x2a, 0x6e, 0xa8};
+        }
+        if (std::strcmp(category, "Conversion") == 0)
+        {
+            return {0x6a, 0x4a, 0x7a};
+        }
+        if (std::strcmp(category, "Event") == 0)
+        {
+            return {0xa8, 0x2a, 0x2a};
+        }
+        if (std::strcmp(category, "Flow") == 0)
+        {
+            return {0x88, 0x88, 0x88};
+        }
+        if (std::strcmp(category, "Variable") == 0)
+        {
+            return {0xa8, 0x6e, 0x2a};
+        }
+        if (std::strcmp(category, "Component") == 0)
+        {
+            return {0x2a, 0x9a, 0xa8};
+        }
+        if (std::strcmp(category, "Utility") == 0)
+        {
+            return {0x70, 0x70, 0x70};
+        }
+        if (std::strcmp(category, "Debug") == 0)
+        {
+            return {0xa8, 0x6e, 0xa8};
+        }
         return {0x55, 0x55, 0x55};
     }
 
@@ -72,12 +99,12 @@ namespace forge
             for (auto* item : selected)
             {
                 node = dynamic_cast<BlueprintNode*>(item);
-                if (node)
+                if (node != nullptr)
                 {
                     break;
                 }
             }
-            if (node)
+            if (node != nullptr)
             {
                 emit nodeSelected(node);
             }
@@ -91,7 +118,7 @@ namespace forge
     BlueprintEditor::~BlueprintEditor()
     {
         m_destroying = true;
-        if (m_undo)
+        if (m_undo != nullptr)
         {
             m_undo->Clear();
         }
@@ -108,7 +135,7 @@ namespace forge
 
     void BlueprintEditor::PushUndoAfterAction()
     {
-        if (!m_undo || m_snapshotBefore.Size() == 0)
+        if (m_undo == nullptr || m_snapshotBefore.Size() == 0)
         {
             return;
         }
@@ -133,7 +160,7 @@ namespace forge
 
     void BlueprintEditor::Undo()
     {
-        if (m_undo)
+        if (m_undo != nullptr)
         {
             m_undo->Undo();
         }
@@ -141,7 +168,7 @@ namespace forge
 
     void BlueprintEditor::Redo()
     {
-        if (m_undo)
+        if (m_undo != nullptr)
         {
             m_undo->Redo();
         }
@@ -158,7 +185,7 @@ namespace forge
         m_nodeMap[nodeId.m_value] = node;
 
         const propolis::Node* graphNode = m_graph.FindNode(nodeId);
-        if (!graphNode)
+        if (graphNode == nullptr)
         {
             return node;
         }
@@ -167,7 +194,7 @@ namespace forge
             for (size_t i = 0; i < pinIds.Size(); ++i)
             {
                 const propolis::Pin* graphPin = m_graph.FindPin(pinIds[i]);
-                if (!graphPin)
+                if (graphPin == nullptr)
                 {
                     continue;
                 }
@@ -194,7 +221,7 @@ namespace forge
     BlueprintNode* BlueprintEditor::AddNodeFromRegistry(const char* descriptorName, const QPointF& pos)
     {
         const propolis::NodeDescriptor* desc = m_registry.Find(descriptorName);
-        if (!desc)
+        if (desc == nullptr)
         {
             return nullptr;
         }
@@ -207,14 +234,14 @@ namespace forge
             propolis::PinId pinId = m_graph.AddPin(nodeId, pd.m_direction, pd.m_type, pd.m_name.CStr());
 
             propolis::Pin* pin = m_graph.FindPin(pinId);
-            if (pin)
+            if (pin != nullptr)
             {
                 pin->m_isExec = (pd.m_type.m_kind == propolis::PTypeKind::SIGNAL);
             }
         }
 
         propolis::Node* graphNode = m_graph.FindNode(nodeId);
-        if (graphNode)
+        if (graphNode != nullptr)
         {
             graphNode->m_posX = static_cast<float>(pos.x());
             graphNode->m_posY = static_cast<float>(pos.y());
@@ -234,7 +261,7 @@ namespace forge
         m_nodeMap[nodeId.m_value] = node;
 
         const propolis::Node* graphNode = m_graph.FindNode(nodeId);
-        if (!graphNode)
+        if (graphNode == nullptr)
         {
             return node;
         }
@@ -243,7 +270,7 @@ namespace forge
             for (size_t i = 0; i < pinIds.Size(); ++i)
             {
                 const propolis::Pin* graphPin = m_graph.FindPin(pinIds[i]);
-                if (!graphPin)
+                if (graphPin == nullptr)
                 {
                     continue;
                 }
@@ -266,7 +293,7 @@ namespace forge
 
     BlueprintNode* BlueprintEditor::AddUserFunctionNode(const propolis::FunctionEntry& fn, const QPointF& pos)
     {
-        const char* categoryStr = (fn.m_category && fn.m_category[0]) ? fn.m_category : "User";
+        const char* categoryStr = (fn.m_category != nullptr && fn.m_category[0] != '\0') ? fn.m_category : "User";
         propolis::NodeId nodeId = m_graph.AddNode(fn.m_name, categoryStr);
 
         const bool isVoid = (fn.m_returnType.m_kind == propolis::PTypeKind::SIGNAL);
@@ -275,7 +302,11 @@ namespace forge
         {
             propolis::PinId execIn = m_graph.AddPin(nodeId, propolis::PinDirection::INPUT,
                                                      propolis::PType::Signal(), "Exec");
-            if (auto* p = m_graph.FindPin(execIn)) p->m_isExec = true;
+            auto* p = m_graph.FindPin(execIn);
+            if (p != nullptr)
+            {
+                p->m_isExec = true;
+            }
         }
 
         for (size_t i = 0; i < fn.m_paramCount; ++i)
@@ -288,7 +319,11 @@ namespace forge
         {
             propolis::PinId execOut = m_graph.AddPin(nodeId, propolis::PinDirection::OUTPUT,
                                                       propolis::PType::Signal(), "Exec");
-            if (auto* p = m_graph.FindPin(execOut)) p->m_isExec = true;
+            auto* p = m_graph.FindPin(execOut);
+            if (p != nullptr)
+            {
+                p->m_isExec = true;
+            }
         }
         else
         {
@@ -296,7 +331,7 @@ namespace forge
         }
 
         propolis::Node* graphNode = m_graph.FindNode(nodeId);
-        if (graphNode)
+        if (graphNode != nullptr)
         {
             graphNode->m_posX = static_cast<float>(pos.x());
             graphNode->m_posY = static_cast<float>(pos.y());
@@ -333,10 +368,10 @@ namespace forge
         bool needsRebuild = false;
 
         propolis::Node* targetNode = m_graph.FindNode(target->Node()->PropolisId());
-        if (targetNode)
+        if (targetNode != nullptr)
         {
             const propolis::NodeDescriptor* desc = m_registry.Find(targetNode->m_title.CStr());
-            if (desc && propolis::HasFlag(desc->m_flags, propolis::NodeFlag::STRUCT_BREAK))
+            if (desc != nullptr && propolis::HasFlag(desc->m_flags, propolis::NodeFlag::STRUCT_BREAK))
             {
                 RebuildBreakPins(targetNode);
                 needsRebuild = true;
@@ -344,10 +379,10 @@ namespace forge
         }
 
         propolis::Node* sourceNode = m_graph.FindNode(source->Node()->PropolisId());
-        if (sourceNode)
+        if (sourceNode != nullptr)
         {
             const propolis::NodeDescriptor* desc = m_registry.Find(sourceNode->m_title.CStr());
-            if (desc && propolis::HasFlag(desc->m_flags, propolis::NodeFlag::STRUCT_MAKE))
+            if (desc != nullptr && propolis::HasFlag(desc->m_flags, propolis::NodeFlag::STRUCT_MAKE))
             {
                 RebuildMakePins(sourceNode);
                 needsRebuild = true;
@@ -365,7 +400,7 @@ namespace forge
 
     void BlueprintEditor::RemoveConnection(BlueprintConnection* conn)
     {
-        if (!conn)
+        if (conn == nullptr)
         {
             return;
         }
@@ -377,7 +412,7 @@ namespace forge
 
     void BlueprintEditor::RemoveNode(BlueprintNode* node)
     {
-        if (!node)
+        if (node == nullptr)
         {
             return;
         }
@@ -412,7 +447,8 @@ namespace forge
 
         for (auto* item : selected)
         {
-            if (auto* conn = dynamic_cast<BlueprintConnection*>(item))
+            auto* conn = dynamic_cast<BlueprintConnection*>(item);
+            if (conn != nullptr)
             {
                 RemoveConnection(conn);
             }
@@ -421,7 +457,8 @@ namespace forge
         selected = m_scene->selectedItems();
         for (auto* item : selected)
         {
-            if (auto* node = dynamic_cast<BlueprintNode*>(item))
+            auto* node = dynamic_cast<BlueprintNode*>(item);
+            if (node != nullptr)
             {
                 RemoveNode(node);
             }
@@ -437,7 +474,7 @@ namespace forge
         for (auto& [id, pin] : m_pinMap)
         {
             const propolis::PType* t = m_lastValidation.m_resolvedPinTypes.Find(id);
-            if (t)
+            if (t != nullptr)
             {
                 pin->SetResolvedType(*t);
             }
@@ -568,7 +605,7 @@ namespace forge
         {
             QPointF scenePos = mapToScene(event->pos());
             BlueprintPin* pin = PinAt(scenePos);
-            if (pin)
+            if (pin != nullptr)
             {
                 m_dragConn = new BlueprintDragConnection{pin};
                 m_scene->addItem(m_dragConn);
@@ -598,7 +635,7 @@ namespace forge
             return;
         }
 
-        if (m_dragConn)
+        if (m_dragConn != nullptr)
         {
             m_dragConn->SetEndPoint(mapToScene(event->pos()));
             event->accept();
@@ -618,7 +655,7 @@ namespace forge
             return;
         }
 
-        if (event->button() == Qt::LeftButton && m_dragConn)
+        if (event->button() == Qt::LeftButton && m_dragConn != nullptr)
         {
             FinalizeDrag(mapToScene(event->pos()));
             event->accept();
@@ -631,7 +668,7 @@ namespace forge
             for (auto& [id, visual] : m_nodeMap)
             {
                 propolis::Node* gn = m_graph.FindNode(propolis::NodeId{id});
-                if (gn)
+                if (gn != nullptr)
                 {
                     float vx = static_cast<float>(visual->pos().x());
                     float vy = static_cast<float>(visual->pos().y());
@@ -726,7 +763,7 @@ namespace forge
         uint32_t varId = event->mimeData()->data(kVariableDragMime).toUInt();
         propolis::VariableId vid{varId};
         const propolis::Variable* var = m_graph.FindVariable(vid);
-        if (!var)
+        if (var == nullptr)
         {
             return;
         }
@@ -738,10 +775,10 @@ namespace forge
         SnapshotBeforeAction();
 
         auto* visual = AddNodeFromRegistry(nodeType, scenePos);
-        if (visual)
+        if (visual != nullptr)
         {
             propolis::Node* graphNode = m_graph.FindNode(visual->PropolisId());
-            if (graphNode)
+            if (graphNode != nullptr)
             {
                 graphNode->m_variableRef = vid;
             }
@@ -762,11 +799,11 @@ namespace forge
         BlueprintNodePalette::Show(this, globalPos, m_registry, fr,
             [this, scenePos](const PaletteSelection& sel) {
                 SnapshotBeforeAction();
-                if (sel.m_descriptor)
+                if (sel.m_descriptor != nullptr)
                 {
                     (void)AddNodeFromRegistry(sel.m_descriptor->m_name.CStr(), scenePos);
                 }
-                else if (sel.m_function)
+                else if (sel.m_function != nullptr)
                 {
                     (void)AddUserFunctionNode(*sel.m_function, scenePos);
                 }
@@ -780,7 +817,8 @@ namespace forge
         auto items = m_scene->items(scenePos, Qt::IntersectsItemBoundingRect, Qt::DescendingOrder);
         for (auto* item : items)
         {
-            if (auto* pin = dynamic_cast<BlueprintPin*>(item))
+            auto* pin = dynamic_cast<BlueprintPin*>(item);
+            if (pin != nullptr)
             {
                 return pin;
             }
@@ -790,7 +828,7 @@ namespace forge
 
     bool BlueprintEditor::CanConnect(BlueprintPin* a, BlueprintPin* b) const
     {
-        if (!a || !b)
+        if (a == nullptr || b == nullptr)
         {
             return false;
         }
@@ -811,7 +849,7 @@ namespace forge
 
     void BlueprintEditor::FinalizeDrag(const QPointF& scenePos)
     {
-        if (!m_dragConn)
+        if (m_dragConn == nullptr)
         {
             return;
         }
@@ -823,7 +861,7 @@ namespace forge
         delete m_dragConn;
         m_dragConn = nullptr;
 
-        if (target && CanConnect(origin, target))
+        if (target != nullptr && CanConnect(origin, target))
         {
             BlueprintPin* src = (origin->Direction() == propolis::PinDirection::OUTPUT) ? origin : target;
             BlueprintPin* dst = (origin->Direction() == propolis::PinDirection::OUTPUT) ? target : origin;
@@ -852,7 +890,7 @@ namespace forge
         {
             const propolis::Node& node = m_graph.Nodes()[i];
             const propolis::NodeDescriptor* desc = m_registry.Find(node.m_title.CStr());
-            if (!desc)
+            if (desc == nullptr)
             {
                 if (node.m_userFn.m_qualifiedCppName.Size() > 0)
                 {
@@ -869,14 +907,14 @@ namespace forge
 
             auto* visual = CreateNodeVisual(node.m_id, *desc, QPointF{node.m_posX, node.m_posY});
 
-            if (visual)
+            if (visual != nullptr)
             {
                 if (node.m_variableRef &&
                     (propolis::HasFlag(desc->m_flags, propolis::NodeFlag::VARIABLE_GET) ||
                      propolis::HasFlag(desc->m_flags, propolis::NodeFlag::VARIABLE_SET)))
                 {
                     const propolis::Variable* var = m_graph.FindVariable(node.m_variableRef);
-                    if (var)
+                    if (var != nullptr)
                     {
                         bool isSet = propolis::HasFlag(desc->m_flags, propolis::NodeFlag::VARIABLE_SET);
                         visual->SetTitle(QString{isSet ? "Set: %1" : "Get: %1"}.arg(
@@ -900,7 +938,7 @@ namespace forge
             const propolis::Edge& edge = m_graph.Edges()[i];
             BlueprintPin* srcPin = FindPinVisual(edge.m_source);
             BlueprintPin* dstPin = FindPinVisual(edge.m_target);
-            if (srcPin && dstPin)
+            if (srcPin != nullptr && dstPin != nullptr)
             {
                 auto* conn = new BlueprintConnection{edge.m_id, srcPin, dstPin};
                 m_scene->addItem(conn);
@@ -929,11 +967,26 @@ namespace forge
         case queen::FieldType::ENTITY:  return propolis::PType::Entity();
         case queen::FieldType::STRUCT:
         {
-            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Float2>()) return propolis::PType::Vec2();
-            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Float3>()) return propolis::PType::Vec3();
-            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Float4>()) return propolis::PType::Vec4();
-            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Quat>())   return propolis::PType::Quat();
-            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Mat4>())   return propolis::PType::Mat4();
+            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Float2>())
+            {
+                return propolis::PType::Vec2();
+            }
+            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Float3>())
+            {
+                return propolis::PType::Vec3();
+            }
+            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Float4>())
+            {
+                return propolis::PType::Vec4();
+            }
+            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Quat>())
+            {
+                return propolis::PType::Quat();
+            }
+            if (field.m_nestedTypeId == queen::TypeIdOf<hive::math::Mat4>())
+            {
+                return propolis::PType::Mat4();
+            }
             return propolis::PType{};
         }
         default: return propolis::PType{};
@@ -943,13 +996,13 @@ namespace forge
     void BlueprintEditor::RebuildComponentPins(propolis::Node* graphNode,
                                                 const queen::ComponentRegistry<256>* registry)
     {
-        if (!graphNode || !registry)
+        if (graphNode == nullptr || registry == nullptr)
         {
             return;
         }
 
         const propolis::NodeDescriptor* desc = m_registry.Find(graphNode->m_title.CStr());
-        if (!desc)
+        if (desc == nullptr)
         {
             return;
         }
@@ -965,7 +1018,7 @@ namespace forge
         for (size_t i = pins.Size(); i > 0; --i)
         {
             const propolis::Pin* pin = m_graph.FindPin(pins[i - 1]);
-            if (pin && pin->m_type.m_kind != propolis::PTypeKind::SIGNAL)
+            if (pin != nullptr && pin->m_type.m_kind != propolis::PTypeKind::SIGNAL)
             {
                 auto edges = m_graph.EdgesForPin(pins[i - 1]);
                 for (size_t e = 0; e < edges.Size(); ++e)
@@ -977,7 +1030,7 @@ namespace forge
         }
 
         const queen::RegisteredComponent* comp = registry->FindByName(graphNode->m_componentRef.CStr());
-        if (!comp || !comp->HasReflection())
+        if (comp == nullptr || !comp->HasReflection())
         {
             return;
         }
@@ -1027,7 +1080,7 @@ namespace forge
 
     void BlueprintEditor::RebuildBreakPins(propolis::Node* graphNode)
     {
-        if (!graphNode)
+        if (graphNode == nullptr)
         {
             return;
         }
@@ -1049,7 +1102,7 @@ namespace forge
         }
 
         const propolis::Pin* inPin = m_graph.FindPin(graphNode->m_inputs[0]);
-        if (!inPin)
+        if (inPin == nullptr)
         {
             return;
         }
@@ -1059,7 +1112,7 @@ namespace forge
         if (edges.Size() > 0)
         {
             const propolis::Pin* srcPin = m_graph.FindPin(edges[0]->m_source);
-            if (srcPin && srcPin->m_type.IsResolved())
+            if (srcPin != nullptr && srcPin->m_type.IsResolved())
             {
                 inputType = srcPin->m_type;
             }
@@ -1076,7 +1129,7 @@ namespace forge
 
     void BlueprintEditor::RebuildMakePins(propolis::Node* graphNode)
     {
-        if (!graphNode)
+        if (graphNode == nullptr)
         {
             return;
         }
@@ -1098,7 +1151,7 @@ namespace forge
         }
 
         const propolis::Pin* outPin = m_graph.FindPin(graphNode->m_outputs[0]);
-        if (!outPin)
+        if (outPin == nullptr)
         {
             return;
         }
@@ -1108,7 +1161,7 @@ namespace forge
         if (edges.Size() > 0)
         {
             const propolis::Pin* dstPin = m_graph.FindPin(edges[0]->m_target);
-            if (dstPin && dstPin->m_type.IsResolved())
+            if (dstPin != nullptr && dstPin->m_type.IsResolved())
             {
                 outputType = dstPin->m_type;
             }

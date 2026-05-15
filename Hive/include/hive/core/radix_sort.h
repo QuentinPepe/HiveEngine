@@ -38,7 +38,9 @@ namespace hive
     template <typename T> void RadixSort(SortItem<T>* data, SortItem<T>* scratch, uint32_t count)
     {
         if (count <= 1)
+        {
             return;
+        }
 
         if (count <= 64)
         {
@@ -72,13 +74,17 @@ namespace hive
                 }
             }
             if (skip)
+            {
                 continue;
+            }
 
             // Prefix sum
             uint32_t offsets[256];
             offsets[0] = 0;
             for (uint32_t b = 1; b < 256; ++b)
+            {
                 offsets[b] = offsets[b - 1] + histogram[b - 1];
+            }
 
             // Scatter
             for (uint32_t i = 0; i < count; ++i)
@@ -97,7 +103,9 @@ namespace hive
         static_assert(std::is_trivially_copyable_v<SortItem<T>>,
                       "RadixSort requires trivially copyable value type");
         if (src != data)
+        {
             std::memcpy(data, src, count * sizeof(SortItem<T>));
+        }
     }
 
 } // namespace hive

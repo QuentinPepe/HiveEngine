@@ -102,7 +102,9 @@ namespace waggle
 
         std::ofstream file{path.CStr()};
         if (!file)
+        {
             return false;
+        }
 
         file.write(content.CStr(), static_cast<std::streamsize>(content.Size()));
         return file.good();

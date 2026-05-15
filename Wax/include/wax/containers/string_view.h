@@ -33,7 +33,7 @@ namespace wax
 
         constexpr StringView(const char* str) noexcept
             : m_data{str}
-            , m_size{str ? StrLen(str) : 0}
+            , m_size{str != nullptr ? StrLen(str) : 0}
         {
         }
 
@@ -150,7 +150,7 @@ namespace wax
             if (!std::is_constant_evaluated())
             {
                 const void* result = std::memchr(m_data + pos, ch, m_size - pos);
-                if (result)
+                if (result != nullptr)
                 {
                     return static_cast<size_t>(static_cast<const char*>(result) - m_data);
                 }

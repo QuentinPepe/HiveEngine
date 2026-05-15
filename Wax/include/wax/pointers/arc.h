@@ -66,7 +66,7 @@ namespace wax
             : m_control{other.m_control}
             , m_allocator{other.m_allocator}
         {
-            if (m_control)
+            if (m_control != nullptr)
             {
                 m_control->m_refCount.fetch_add(1, std::memory_order_relaxed);
             }
@@ -79,7 +79,7 @@ namespace wax
                 Release();
                 m_control = other.m_control;
                 m_allocator = other.m_allocator;
-                if (m_control)
+                if (m_control != nullptr)
                 {
                     m_control->m_refCount.fetch_add(1, std::memory_order_relaxed);
                 }
@@ -127,7 +127,7 @@ namespace wax
 
         [[nodiscard]] T* Get() const noexcept
         {
-            return m_control ? &m_control->m_object : nullptr;
+            return m_control != nullptr ? &m_control->m_object : nullptr;
         }
 
         [[nodiscard]] Allocator* GetAllocator() const noexcept
@@ -137,12 +137,12 @@ namespace wax
 
         [[nodiscard]] size_t GetRefCount() const noexcept
         {
-            return m_control ? m_control->m_refCount.load(std::memory_order_relaxed) : 0;
+            return m_control != nullptr ? m_control->m_refCount.load(std::memory_order_relaxed) : 0;
         }
 
         [[nodiscard]] bool IsUnique() const noexcept
         {
-            return m_control && m_control->m_refCount.load(std::memory_order_relaxed) == 1;
+            return m_control != nullptr && m_control->m_refCount.load(std::memory_order_relaxed) == 1;
         }
 
         [[nodiscard]] explicit operator bool() const noexcept
@@ -180,7 +180,7 @@ namespace wax
     private:
         void Release() noexcept
         {
-            if (m_control && m_allocator)
+            if (m_control != nullptr && m_allocator != nullptr)
             {
                 if (m_control->m_refCount.fetch_sub(1, std::memory_order_acq_rel) == 1)
                 {

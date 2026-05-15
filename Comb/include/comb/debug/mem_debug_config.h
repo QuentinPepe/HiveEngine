@@ -1,27 +1,6 @@
-/**
- * Memory Debugging Configuration
- *
- * Feature flags for Comb memory debugging system.
- * All features compile to nothing when COMB_MEM_DEBUG=0 (zero overhead).
- *
- * Build configuration:
- * - COMB_MEM_DEBUG=0: Zero overhead, all tracking disabled (default)
- * - COMB_MEM_DEBUG=1: Enable memory debugging (slow! 2-10x overhead)
- * - COMB_MEM_DEBUG_CALLSTACKS=1: Enable callstack capture (very slow! 10-100x)
- *
- * Usage:
- * @code
- *   // CMake
- *   option(HIVE_FEATURE_MEM_DEBUG "Enable memory debugging" OFF)
- *
- * option(COMB_ENABLE_CALLSTACKS "Enable callstack capture" OFF)
- *
- *   // Code
- *   #if COMB_MEM_DEBUG_LEAK_DETECTION
- *       registry_.ReportLeaks(GetName());
- *   #endif
- * @endcode
- */
+// Feature flags for Comb memory debugging. All features compile out when
+// COMB_MEM_DEBUG=0 so release builds pay nothing. Enabling COMB_MEM_DEBUG=1
+// is expected to be slow (2-10x); callstacks add another 10-100x.
 
 #pragma once
 
@@ -45,83 +24,30 @@
 
 // Core Features (Always Enabled)
 
-/**
- * Leak Detection
- * - Tracks all allocations in hash table
- * - Reports unfreed allocations on allocator destruction
- * - Overhead: Low (hash table insert/remove)
- */
 #define COMB_MEM_DEBUG_LEAK_DETECTION 1
-
-/**
- * Double-Free Detection
- * - Checks if pointer exists in registry before deallocation
- * - Asserts if pointer not found (already freed or never allocated)
- * - Overhead: Low (hash table lookup)
- */
 #define COMB_MEM_DEBUG_DOUBLE_FREE 1
-
-/**
- * Buffer Overrun Detection
- * - Adds guard bytes (0xDEADBEEF) before and after allocation
- * - Checks guards on deallocation
- * - Overhead: Low (+8 bytes per allocation)
- */
 #define COMB_MEM_DEBUG_BUFFER_OVERRUN 1
-
-/**
- * Allocation Tracking
- * - Stores metadata for each allocation (size, alignment, timestamp, tag)
- * - Overhead: Low (~32 bytes per allocation in hash table)
- */
 #define COMB_MEM_DEBUG_TRACKING 1
-
-/**
- * Memory Profiling Statistics
- * - Tracks peak usage, allocation count, fragmentation
- * - Overhead: Negligible (few counters)
- */
 #define COMB_MEM_DEBUG_STATS 1
 
 // Optional Features (Can be Disabled for Performance)
 
-/**
- * Use-After-Free Detection
- * - Fills freed memory with pattern (0xFE)
- * - Helps detect reads from freed memory
- * - Overhead: Medium (memset on every deallocation)
- * - Can be disabled: #define COMB_MEM_DEBUG_USE_AFTER_FREE 0
- */
+// Fills freed memory with 0xFE so reads-after-free are visible.
 #ifndef COMB_MEM_DEBUG_USE_AFTER_FREE
-#define COMB_MEM_DEBUG_USE_AFTER_FREE 1 // Enabled by default
+#define COMB_MEM_DEBUG_USE_AFTER_FREE 1
 #endif
 
-/**
- * Allocation History Ring Buffer
- * - Keeps ring buffer of recent allocations
- * - Useful for post-mortem debugging
- * - Overhead: Medium (ring buffer storage)
- * - Size configurable via COMB_MEM_DEBUG_HISTORY_SIZE
- */
+// Ring buffer of recent allocations for post-mortem analysis.
 #ifndef COMB_MEM_DEBUG_HISTORY
-#define COMB_MEM_DEBUG_HISTORY 1 // Enabled by default
+#define COMB_MEM_DEBUG_HISTORY 1
 #endif
 
 #ifndef COMB_MEM_DEBUG_HISTORY_SIZE
-#define COMB_MEM_DEBUG_HISTORY_SIZE 1000 // Last 1000 allocations
+#define COMB_MEM_DEBUG_HISTORY_SIZE 1000
 #endif
 
-// Expensive Features (Disabled by Default)
-
-/**
- * Callstack Capture
- * - Captures callstack at allocation site (16 frames)
- * - Platform-specific (Windows: CaptureStackBackTrace, POSIX: backtrace)
- * - Overhead: VERY HIGH (10-100x slower allocations!)
- * - Only enable when debugging specific leaks
- * - Set by CMake: -DCOMB_ENABLE_CALLSTACKS=ON
- */
-// COMB_MEM_DEBUG_CALLSTACKS already defined by CMake
+// Callstack capture is defined by CMake (-DCOMB_ENABLE_CALLSTACKS=ON).
+// Very expensive: only enable when debugging a specific leak.
 
 // Debug Constants
 
@@ -182,32 +108,11 @@ namespace comb::debug
 
 namespace comb::debug
 {
-    /**
-     * Compile-time constant: is memory debugging enabled?
-     * Use with `if constexpr` for zero-overhead conditional compilation
-     *
-     * Example:
-     * @code
-     *   if constexpr (comb::debug::kMemDebugEnabled) {
-     *       registry_.ReportLeaks(GetName());
-     *   }
-     * @endcode
-     */
+    // Mirrors of the preprocessor flags as constexpr bools, so callers can
+    // gate code via `if constexpr` instead of #if.
     inline constexpr bool kMemDebugEnabled = (COMB_MEM_DEBUG != 0);
-
-    /**
-     * Compile-time constant: is callstack capture enabled?
-     */
     inline constexpr bool kCallstacksEnabled = (COMB_MEM_DEBUG_CALLSTACKS != 0);
-
-    /**
-     * Compile-time constant: is leak detection enabled?
-     */
     inline constexpr bool kLeakDetectionEnabled = (COMB_MEM_DEBUG_LEAK_DETECTION != 0);
-
-    /**
-     * Compile-time constant: is use-after-free detection enabled?
-     */
     inline constexpr bool kUseAfterFreeEnabled = (COMB_MEM_DEBUG_USE_AFTER_FREE != 0);
 } // namespace comb::debug
 

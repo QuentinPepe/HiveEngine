@@ -8,9 +8,6 @@
 
 namespace queen
 {
-    /**
-     * World access level for a system
-     */
     enum class WorldAccess : uint8_t
     {
         NONE,      // No direct world access
@@ -19,44 +16,8 @@ namespace queen
         EXCLUSIVE, // Exclusive access (blocks all other systems)
     };
 
-    /**
-     * Describes the data access pattern of a system
-     *
-     * AccessDescriptor captures which components and resources a system reads
-     * and writes, enabling the scheduler to determine which systems can run
-     * in parallel without data races.
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ component_reads_: Vector<TypeId>                                │
-     * │ component_writes_: Vector<TypeId>                               │
-     * │ resource_reads_: Vector<TypeId>                                 │
-     * │ resource_writes_: Vector<TypeId>                                │
-     * │ world_access_: WorldAccess                                      │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Conflict check: O(n*m) where n,m are access list sizes
-     * - Adding access: O(n) to check duplicates
-     * - Storage: ~96 bytes + vector contents
-     *
-     * Use cases:
-     * - Automatic parallel scheduling
-     * - Detecting data race hazards at runtime
-     * - System dependency graph construction
-     *
-     * Example:
-     * @code
-     *   AccessDescriptor desc{alloc};
-     *   desc.AddComponentRead<Position>();
-     *   desc.AddComponentWrite<Velocity>();
-     *   desc.AddResourceRead<Time>();
-     *
-     *   if (desc.ConflictsWith(other_desc)) {
-     *       // Cannot run in parallel
-     *   }
-     * @endcode
-     */
+    // Read/write access manifest for a system. The scheduler consults this to
+    // decide whether two systems can run concurrently without data races.
     template <comb::Allocator Allocator> class AccessDescriptor
     {
     public:
@@ -139,16 +100,8 @@ namespace queen
             return m_resourceWrites;
         }
 
-        /**
-         * Check if this descriptor conflicts with another
-         *
-         * Two systems conflict if:
-         * - Either has exclusive world access
-         * - One writes a component/resource that the other reads or writes
-         *
-         * @param other The other access descriptor
-         * @return true if systems cannot run in parallel
-         */
+        // Conflict rules: exclusive world access blocks everything; otherwise any
+        // write that overlaps the other side's reads or writes is a conflict.
         [[nodiscard]] bool ConflictsWith(const AccessDescriptor& other) const noexcept
         {
             if (m_worldAccess == WorldAccess::EXCLUSIVE || other.m_worldAccess == WorldAccess::EXCLUSIVE)
@@ -173,26 +126,17 @@ namespace queen
             return false;
         }
 
-        /**
-         * Check if this descriptor is empty (no access)
-         */
         [[nodiscard]] bool IsEmpty() const noexcept
         {
             return m_componentReads.IsEmpty() && m_componentWrites.IsEmpty() && m_resourceReads.IsEmpty() &&
                    m_resourceWrites.IsEmpty() && m_worldAccess == WorldAccess::NONE;
         }
 
-        /**
-         * Check if this is a pure system (no ECS data access)
-         */
         [[nodiscard]] bool IsPure() const noexcept
         {
             return IsEmpty();
         }
 
-        /**
-         * Check if this system requires exclusive access
-         */
         [[nodiscard]] bool IsExclusive() const noexcept
         {
             return m_worldAccess == WorldAccess::EXCLUSIVE;

@@ -44,24 +44,34 @@ namespace forge
             std::map<QString, GuidEntry> guidMap;
             std::error_code ec;
             if (!std::filesystem::exists(assetsRoot, ec))
+            {
                 return guidMap;
+            }
 
             for (auto it = std::filesystem::recursive_directory_iterator{assetsRoot, ec};
                  it != std::filesystem::recursive_directory_iterator{}; ++it)
             {
                 if (!it->is_regular_file())
+                {
                     continue;
+                }
                 if (it->path().extension().string() != ".hiveid")
+                {
                     continue;
+                }
 
                 QFile f{QString::fromStdString(it->path().string())};
                 if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+                {
                     continue;
+                }
                 while (!f.atEnd())
                 {
                     const QString line = f.readLine().trimmed();
                     if (!line.startsWith("guid="))
+                    {
                         continue;
+                    }
                     QString guid = line.mid(5);
                     auto assetFile = it->path().parent_path() / it->path().stem();
                     GuidEntry entry;
@@ -79,15 +89,21 @@ namespace forge
             auto hiveidPath = std::filesystem::path{assetPath}.concat(".hiveid");
             std::error_code ec;
             if (!std::filesystem::exists(hiveidPath, ec))
+            {
                 return {};
+            }
             QFile hf{QString::fromStdString(hiveidPath.string())};
             if (!hf.open(QIODevice::ReadOnly | QIODevice::Text))
+            {
                 return {};
+            }
             while (!hf.atEnd())
             {
                 QString line = hf.readLine().trimmed();
                 if (line.startsWith("guid="))
+                {
                     return "{" + line.mid(5) + "}";
+                }
             }
             return {};
         }
@@ -96,7 +112,9 @@ namespace forge
         {
             v = v.trimmed();
             if (v.startsWith('"') && v.endsWith('"'))
+            {
                 v = v.mid(1, v.size() - 2);
+            }
             return v;
         }
 
@@ -105,7 +123,9 @@ namespace forge
             std::vector<float> out;
             QString trimmed = raw.trimmed();
             if (!trimmed.startsWith('[') || !trimmed.endsWith(']'))
+            {
                 return out;
+            }
             const QString inner = trimmed.mid(1, trimmed.size() - 2);
             const QStringList parts = inner.split(',', Qt::SkipEmptyParts);
             for (const QString& p : parts)
@@ -113,7 +133,9 @@ namespace forge
                 bool ok = false;
                 const float f = p.trimmed().toFloat(&ok);
                 if (ok)
+                {
                     out.push_back(f);
+                }
             }
             return out;
         }
@@ -126,13 +148,17 @@ namespace forge
             SectionMap doc;
             QFile file{QString::fromStdString(path.string())};
             if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            {
                 return doc;
+            }
             QString section;
             while (!file.atEnd())
             {
                 QString line = file.readLine().trimmed();
                 if (line.isEmpty() || line.startsWith('#'))
+                {
                     continue;
+                }
                 if (line.startsWith('[') && line.endsWith(']'))
                 {
                     section = line.mid(1, line.size() - 2);
@@ -141,7 +167,9 @@ namespace forge
                 }
                 const int eq = line.indexOf('=');
                 if (eq < 0 || section.isEmpty())
+                {
                     continue;
+                }
                 doc[section][line.left(eq).trimmed()] = line.mid(eq + 1).trimmed();
             }
             return doc;
@@ -150,9 +178,13 @@ namespace forge
         MaterialParamKind ClassifyParam(const QString& uiHint, size_t defaultCount)
         {
             if (uiHint == "color")
+            {
                 return defaultCount >= 4 ? MaterialParamKind::Color4 : MaterialParamKind::Color3;
+            }
             if (uiHint == "range")
+            {
                 return MaterialParamKind::Range;
+            }
             switch (defaultCount)
             {
                 case 2:
@@ -171,7 +203,9 @@ namespace forge
             MaterialSchema schema;
             std::error_code ec;
             if (!std::filesystem::exists(shaderPath, ec))
+            {
                 return schema;
+            }
             schema.shaderResolved = true;
 
             const SectionMap doc = ReadHiveDoc(shaderPath);
@@ -182,22 +216,42 @@ namespace forge
                     MaterialParamAnnotation param;
                     param.name = section.mid(QString{"parameters."}.size());
                     QString uiHint;
-                    if (auto it = kvs.find("ui"); it != kvs.end())
-                        uiHint = StripQuotes(it->second);
-                    if (auto it = kvs.find("min"); it != kvs.end())
-                        param.minValue = it->second.toFloat();
-                    if (auto it = kvs.find("max"); it != kvs.end())
-                        param.maxValue = it->second.toFloat();
-                    if (auto it = kvs.find("default"); it != kvs.end())
                     {
-                        if (it->second.startsWith('['))
-                            param.defaults = ParseFloatArray(it->second);
+                        auto it = kvs.find("ui");
+                        if (it != kvs.end())
+                        {
+                            uiHint = StripQuotes(it->second);
+                        }
+                    }
+                    {
+                        auto it = kvs.find("min");
+                        if (it != kvs.end())
+                        {
+                            param.minValue = it->second.toFloat();
+                        }
+                    }
+                    {
+                        auto it = kvs.find("max");
+                        if (it != kvs.end())
+                        {
+                            param.maxValue = it->second.toFloat();
+                        }
+                    }
+                    auto defaultIt = kvs.find("default");
+                    if (defaultIt != kvs.end())
+                    {
+                        if (defaultIt->second.startsWith('['))
+                        {
+                            param.defaults = ParseFloatArray(defaultIt->second);
+                        }
                         else
                         {
                             bool ok = false;
-                            const float f = it->second.toFloat(&ok);
+                            const float f = defaultIt->second.toFloat(&ok);
                             if (ok)
+                            {
                                 param.defaults.push_back(f);
+                            }
                         }
                     }
                     param.kind = ClassifyParam(uiHint, param.defaults.size());
@@ -263,7 +317,9 @@ namespace forge
                 {
                     QStringList parts;
                     for (float f : values)
+                    {
                         parts << QString::number(f);
+                    }
                     out << QString{"%1 = [%2]\n"}.arg(name, parts.join(", "));
                 }
             }
@@ -275,7 +331,9 @@ namespace forge
             for (const auto& [name, guid] : s.textureGuids)
             {
                 if (!guid.isEmpty())
+                {
                     out << QString{"%1 = \"%2\"\n"}.arg(name, guid);
+                }
             }
         }
 
@@ -283,45 +341,67 @@ namespace forge
         {
             out << "\n[features]\n";
             for (const auto& [name, value] : s.featureValues)
+            {
                 out << QString{"%1 = %2\n"}.arg(name, value ? "true" : "false");
+            }
         }
     }
 
     static void LoadMatOverrides(MaterialInspector::State& s)
     {
         const SectionMap doc = ReadHiveDoc(s.matPath);
-        if (auto it = doc.find("material"); it != doc.end())
         {
-            auto sh = it->second.find("shader");
-            if (sh != it->second.end())
-                s.shaderRelPath = StripQuotes(sh->second);
-        }
-        if (auto it = doc.find("parameters"); it != doc.end())
-        {
-            for (const auto& [name, raw] : it->second)
+            auto it = doc.find("material");
+            if (it != doc.end())
             {
-                if (raw.startsWith('['))
+                auto sh = it->second.find("shader");
+                if (sh != it->second.end())
                 {
-                    s.paramValues[name] = ParseFloatArray(raw);
-                }
-                else
-                {
-                    bool ok = false;
-                    const float f = raw.toFloat(&ok);
-                    if (ok)
-                        s.paramValues[name] = {f};
+                    s.shaderRelPath = StripQuotes(sh->second);
                 }
             }
         }
-        if (auto it = doc.find("textures"); it != doc.end())
         {
-            for (const auto& [name, raw] : it->second)
-                s.textureGuids[name] = StripQuotes(raw);
+            auto it = doc.find("parameters");
+            if (it != doc.end())
+            {
+                for (const auto& [name, raw] : it->second)
+                {
+                    if (raw.startsWith('['))
+                    {
+                        s.paramValues[name] = ParseFloatArray(raw);
+                    }
+                    else
+                    {
+                        bool ok = false;
+                        const float f = raw.toFloat(&ok);
+                        if (ok)
+                        {
+                            s.paramValues[name] = {f};
+                        }
+                    }
+                }
+            }
         }
-        if (auto it = doc.find("features"); it != doc.end())
         {
-            for (const auto& [name, raw] : it->second)
-                s.featureValues[name] = (raw == "true");
+            auto it = doc.find("textures");
+            if (it != doc.end())
+            {
+                for (const auto& [name, raw] : it->second)
+                {
+                    s.textureGuids[name] = StripQuotes(raw);
+                }
+            }
+        }
+        {
+            auto it = doc.find("features");
+            if (it != doc.end())
+            {
+                for (const auto& [name, raw] : it->second)
+                {
+                    s.featureValues[name] = (raw == "true");
+                }
+            }
         }
     }
 
@@ -331,17 +411,23 @@ namespace forge
         for (const auto& p : s.schema.params)
         {
             if (s.paramValues.find(p.name) == s.paramValues.end())
+            {
                 s.paramValues[p.name] = p.defaults;
+            }
         }
         for (const auto& f : s.schema.features)
         {
             if (s.featureValues.find(f.name) == s.featureValues.end())
+            {
                 s.featureValues[f.name] = f.defaultValue;
+            }
         }
         for (const auto& t : s.schema.textures)
         {
             if (s.textureGuids.find(t.name) == s.textureGuids.end())
+            {
                 s.textureGuids[t.name] = "";
+            }
         }
     }
 
@@ -364,7 +450,9 @@ namespace forge
                 break;
             }
             if (p == p.root_path())
+            {
                 break;
+            }
         }
 
         LoadMatOverrides(*m_state);
@@ -445,7 +533,9 @@ namespace forge
                     [state, name, saveMat, this](const QString& colorName) {
                         const QColor c{colorName};
                         if (!c.isValid())
+                        {
                             return;
+                        }
                         auto& v = state->paramValues[name];
                         v.clear();
                         v.push_back(static_cast<float>(c.redF()));
@@ -553,10 +643,14 @@ namespace forge
             connect(searchBtn, &QPushButton::clicked, this, [state, name, saveMat, this] {
                 AssetPickerPopup picker{state->assetsRoot, AssetType::TEXTURE, this->window()};
                 if (picker.exec() != QDialog::Accepted)
+                {
                     return;
+                }
                 const QString guid = ReadGuidFromHiveId(picker.SelectedPath());
                 if (guid.isEmpty())
+                {
                     return;
+                }
                 state->textureGuids[name] = guid;
                 saveMat();
                 emit materialModified();
@@ -661,24 +755,34 @@ namespace forge
         {
             auto* dropEvent = static_cast<QDropEvent*>(event);
             if (!dropEvent->mimeData()->hasFormat(ASSET_DROP_MIME))
+            {
                 return false;
+            }
 
             const QString texKey = obj->property("texKey").toString();
             if (texKey.isEmpty())
+            {
                 return false;
+            }
 
             const auto paths =
                 QString::fromUtf8(dropEvent->mimeData()->data(ASSET_DROP_MIME)).split('\n', Qt::SkipEmptyParts);
             if (paths.isEmpty())
+            {
                 return false;
+            }
 
             const auto droppedPath = std::filesystem::path{paths.first().toStdString()};
             if (ClassifyExtension(droppedPath.extension().string()) != AssetType::TEXTURE)
+            {
                 return false;
+            }
 
             const QString guid = ReadGuidFromHiveId(droppedPath);
             if (guid.isEmpty())
+            {
                 return false;
+            }
 
             m_state->textureGuids[texKey] = guid;
             WriteHiveDocToFile(m_state->matPath, *m_state);

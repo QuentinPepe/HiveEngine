@@ -16,32 +16,9 @@ namespace queen
 {
     template <comb::Allocator Allocator> class SystemStorage;
 
-    /**
-     * Graph of system dependencies for scheduling
-     *
-     * DependencyGraph builds and maintains a directed acyclic graph (DAG)
-     * of system dependencies. Dependencies are inferred automatically from
-     * access patterns (AccessDescriptor) or can be specified explicitly.
-     *
-     * Use cases:
-     * - Computing safe parallel execution order
-     * - Detecting systems that can run concurrently
-     * - Validating no cycles exist in dependencies
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ nodes_: Vector<SystemNode>                                      │
-     * │ adjacency_: Vector<Vector<uint32_t>> (dependents per node)      │
-     * │ roots_: Vector<uint32_t> (systems with no dependencies)         │
-     * │ execution_order_: Vector<uint32_t> (topologically sorted)       │
-     * │ dirty_: bool (needs rebuild)                                    │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Build: O(N^2) where N = number of systems
-     * - Topological sort: O(N + E) where E = number of edges
-     * - Reset: O(N)
-     */
+    // DAG of system-to-system ordering edges. Edges come from two sources:
+    // automatic conflicts derived from AccessDescriptor, and explicit
+    // After/Before constraints declared on the SystemBuilder.
     template <comb::Allocator Allocator> class DependencyGraph
     {
     public:
@@ -60,13 +37,8 @@ namespace queen
         DependencyGraph(DependencyGraph&&) noexcept = default;
         DependencyGraph& operator=(DependencyGraph&&) noexcept = default;
 
-        /**
-         * Build dependency graph from system storage
-         *
-         * Analyzes all registered systems' access patterns and builds
-         * edges where systems conflict. Systems registered earlier take
-         * precedence (run first) when conflicts occur.
-         */
+        // Registration order is the tie-breaker for conflicting systems: the
+        // earlier-registered system always runs first.
         void Build(const SystemStorage<Allocator>& storage)
         {
             HIVE_PROFILE_SCOPE_N("DependencyGraph::Build");
@@ -172,9 +144,6 @@ namespace queen
             m_dirty = false;
         }
 
-        /**
-         * Reset all nodes to pending state for a new frame
-         */
         void Reset()
         {
             for (size_t i = 0; i < m_nodes.Size(); ++i)
@@ -183,41 +152,26 @@ namespace queen
             }
         }
 
-        /**
-         * Mark graph as needing rebuild
-         */
         void MarkDirty() noexcept
         {
             m_dirty = true;
         }
 
-        /**
-         * Check if graph needs rebuild
-         */
         [[nodiscard]] bool IsDirty() const noexcept
         {
             return m_dirty;
         }
 
-        /**
-         * Get the topologically sorted execution order
-         */
         [[nodiscard]] const wax::Vector<uint32_t>& ExecutionOrder() const noexcept
         {
             return m_executionOrder;
         }
 
-        /**
-         * Get root systems (no dependencies)
-         */
         [[nodiscard]] const wax::Vector<uint32_t>& Roots() const noexcept
         {
             return m_roots;
         }
 
-        /**
-         * Get node by index
-         */
         [[nodiscard]] SystemNode* GetNode(uint32_t index)
         {
             if (index < m_nodes.Size())
@@ -236,9 +190,6 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Get dependents of a node (systems that depend on this one)
-         */
         [[nodiscard]] const wax::Vector<uint32_t>* GetDependents(uint32_t index) const
         {
             if (index < m_adjacency.Size())
@@ -248,17 +199,13 @@ namespace queen
             return nullptr;
         }
 
-        /**
-         * Get number of nodes
-         */
         [[nodiscard]] size_t NodeCount() const noexcept
         {
             return m_nodes.Size();
         }
 
-        /**
-         * Check if graph has cycles (should never happen with proper construction)
-         */
+        // Build() asserts on cycles, so this should never return true in practice.
+        // Kept as a defensive check for callers operating on partially-built graphs.
         [[nodiscard]] bool HasCycle() const noexcept
         {
             // If topological sort succeeded, we have all nodes in order

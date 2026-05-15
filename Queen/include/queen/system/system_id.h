@@ -4,23 +4,8 @@
 
 namespace queen
 {
-    /**
-     * Type-safe identifier for systems
-     *
-     * SystemId uniquely identifies a registered system within a World.
-     * Uses a 32-bit index internally for compact storage and fast lookup.
-     *
-     * Performance characteristics:
-     * - Comparison: O(1) - single integer compare
-     * - Hashing: O(1) - direct value use
-     * - Storage: 4 bytes
-     *
-     * Example:
-     * @code
-     *   SystemId movement = world.system<Read<Position>>("Movement").each(...);
-     *   world.run_system(movement);
-     * @endcode
-     */
+    // Type-safe handle for a registered system. Backed by a 32-bit index that
+    // matches the system's slot in SystemStorage, so lookups stay O(1).
     class SystemId
     {
     public:

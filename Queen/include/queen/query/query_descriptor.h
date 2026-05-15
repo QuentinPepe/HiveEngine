@@ -11,48 +11,16 @@
 
 namespace queen
 {
-    /**
-     * Query descriptor - runtime representation of a query
-     *
-     * Holds the terms that define which archetypes match a query.
-     * Extracts required, excluded, and optional component TypeIds from
-     * a list of terms for efficient archetype matching.
-     *
-     * Memory layout:
-     * ┌──────────────────────────────────────────────────────────────┐
-     * │ terms_: Vector<Term>         (all query terms)               │
-     * │ required_: Vector<TypeId>    (With terms, must have)         │
-     * │ excluded_: Vector<TypeId>    (Without terms, must not have)  │
-     * │ optional_: Vector<TypeId>    (Maybe terms, may have)         │
-     * │ data_access_: Vector<Term>   (terms with Read/Write access)  │
-     * └──────────────────────────────────────────────────────────────┘
-     *
-     * Matching logic:
-     * - Archetype must have ALL required components
-     * - Archetype must have NONE of the excluded components
-     * - Optional components are fetched if present (nullptr otherwise)
-     *
-     * Performance characteristics:
-     * - Construction: O(n) where n = number of terms
-     * - MatchesArchetype: O(r + e) where r=required, e=excluded
-     *
-     * Limitations:
-     * - Not thread-safe
-     * - Immutable after construction
-     *
-     * Example:
-     * @code
-     *   QueryDescriptor desc{alloc};
-     *   desc.AddTerm(Read<Position>::ToTerm());
-     *   desc.AddTerm(Write<Velocity>::ToTerm());
-     *   desc.AddTerm(Without<Dead>::ToTerm());
-     *   desc.Finalize();
-     *
-     *   if (desc.MatchesArchetype(*archetype)) {
-     *       // archetype has Position, Velocity, and NOT Dead
-     *   }
-     * @endcode
-     */
+    // Runtime descriptor that partitions a query's Terms into required/excluded/optional
+    // buckets so archetype matching is a pair of linear scans rather than a re-walk of the
+    // original term list. Immutable after Finalize(); not thread-safe.
+    //
+    // Bucket layout populated by Finalize():
+    //   terms_        all query terms (input)
+    //   required_     With terms     (archetype must have)
+    //   excluded_     Without terms  (archetype must not have)
+    //   optional_     Maybe terms    (fetched if present)
+    //   data_access_  terms with Read/Write access (for callback binding)
     template <comb::Allocator Allocator> class QueryDescriptor
     {
     public:

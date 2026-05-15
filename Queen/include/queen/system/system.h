@@ -13,9 +13,6 @@ namespace queen
 {
     class World;
 
-    /**
-     * Execution mode for a system
-     */
     enum class SystemExecutor : uint8_t
     {
         SEQUENTIAL, // Runs on main thread only
@@ -23,47 +20,13 @@ namespace queen
         EXCLUSIVE,  // Requires exclusive world access
     };
 
-    /**
-     * Type-erased system executor function
-     *
-     * The executor is a type-erased callable that executes the system logic.
-     * It receives a World reference and performs the system's work.
-     */
+    // Type-erased executor signature so lambdas of arbitrary capture can be stored
+    // alongside the user-data pointer that holds their state.
     using SystemExecutorFn = void (*)(World& world, void* userData);
 
-    /**
-     * Describes a registered system
-     *
-     * SystemDescriptor contains all metadata needed to schedule and execute
-     * a system. This includes the system's name, access pattern, query,
-     * and the type-erased executor function.
-     *
-     * Memory layout:
-     * ┌─────────────────────────────────────────────────────────────────┐
-     * │ id_: SystemId                                                   │
-     * │ name_: FixedString<64>                                          │
-     * │ access_: AccessDescriptor                                       │
-     * │ query_: QueryDescriptor (optional)                              │
-     * │ executor_fn_: function pointer                                  │
-     * │ user_data_: void* (for lambda captures)                         │
-     * │ executor_mode_: SystemExecutor                                  │
-     * └─────────────────────────────────────────────────────────────────┘
-     *
-     * Performance characteristics:
-     * - Execution: O(1) function call + query iteration
-     * - Name lookup: O(n) linear search (use SystemId for fast access)
-     *
-     * Limitations:
-     * - System name limited to 64 characters
-     * - Query must be set before execution for query-based systems
-     *
-     * Example:
-     * @code
-     *   // Created automatically via World::system<>()
-     *   SystemId id = world.system<Read<Position>>("Movement")
-     *       .each([](const Position& pos) { ... });
-     * @endcode
-     */
+    // Self-contained metadata + executor for a registered system. The descriptor
+    // owns its executor's user-data block via a manual destructor pointer so we
+    // can store arbitrary lambdas without RTTI.
     template <comb::Allocator Allocator> class SystemDescriptor
     {
     public:
@@ -231,12 +194,8 @@ namespace queen
             m_destructorFn = destructor;
         }
 
-        /**
-         * Execute the system and update last_run_tick
-         *
-         * @param world The world to execute on
-         * @param current_tick The current world tick (for change detection)
-         */
+        // Records currentTick on success so change-detection queries can compare
+        // against the last successful run.
         void Execute(World& world, Tick currentTick)
         {
             if (m_executorFn != nullptr && m_enabled)

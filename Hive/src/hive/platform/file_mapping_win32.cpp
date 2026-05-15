@@ -58,7 +58,9 @@ namespace hive
         HANDLE file = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
         if (file == INVALID_HANDLE_VALUE)
+        {
             return false;
+        }
 
         LARGE_INTEGER fileSize{};
         if (!GetFileSizeEx(file, &fileSize))
@@ -104,19 +106,23 @@ namespace hive
 
     void FileMapping::Close() noexcept
     {
-        if (!m_fileHandle && !m_mappingHandle && m_data == nullptr)
+        if (m_fileHandle == nullptr && m_mappingHandle == nullptr && m_data == nullptr)
+        {
             return;
+        }
 
         const size_t releasedSize = m_size;
         const bool wasMapped = m_data != nullptr;
 
-        if (m_mappingHandle)
+        if (m_mappingHandle != nullptr)
         {
             UnmapViewOfFile(m_data);
             CloseHandle(static_cast<HANDLE>(m_mappingHandle));
         }
-        if (m_fileHandle)
+        if (m_fileHandle != nullptr)
+        {
             CloseHandle(static_cast<HANDLE>(m_fileHandle));
+        }
 
         m_data = nullptr;
         m_size = 0;

@@ -170,7 +170,7 @@ namespace wax
         ~HashMap()
         {
             Clear();
-            if (m_buckets)
+            if (m_buckets != nullptr)
             {
                 m_allocator.Deallocate(m_buckets);
             }
@@ -195,7 +195,7 @@ namespace wax
             if (this != &other)
             {
                 Clear();
-                if (m_buckets)
+                if (m_buckets != nullptr)
                 {
                     m_allocator.Deallocate(m_buckets);
                 }

@@ -7,16 +7,8 @@
 
 namespace nectar
 {
-    /**
-     * 128-bit unique asset identifier
-     *
-     * Implemented as two 64-bit integers for efficient storage and comparison.
-     *
-     * Performance characteristics:
-     * - Storage: 16 bytes (two uint64)
-     * - Comparison: O(1) - two 64-bit compares
-     * - Hash: O(1) - XOR of high and low
-     */
+    // 128-bit unique asset identifier stored as two uint64s so comparison
+    // and hashing stay cheap (no heap, no string).
     class AssetId
     {
     public:

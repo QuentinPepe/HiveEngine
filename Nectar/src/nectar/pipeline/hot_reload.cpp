@@ -100,7 +100,9 @@ namespace nectar
         }
 
         if (changes.Size() == 0)
+        {
             return 0;
+        }
 
         // Deduplicate by path, resolve conflicting event types via filesystem check
         wax::Vector<FileChange> deduped{*m_alloc};
@@ -113,7 +115,9 @@ namespace nectar
                 for (size_t c = 0; c < normalized.Size(); ++c)
                 {
                     if (normalized[c] == '\\')
+                    {
                         normalized[c] = '/';
+                    }
                 }
 
                 // Skip .hiveid sidecar events
@@ -121,7 +125,9 @@ namespace nectar
                 {
                     wax::StringView suffix{normalized.Data() + normalized.Size() - 7, 7};
                     if (suffix == wax::StringView{".hiveid", 7})
+                    {
                         continue;
+                    }
                 }
 
                 auto* existing = seen.Find(normalized);
@@ -133,18 +139,24 @@ namespace nectar
                     {
                         std::error_code ec;
                         bool onDisk = std::filesystem::exists(std::filesystem::path{normalized.CStr()}, ec);
-                        if (!onDisk && m_vfs)
+                        if (!onDisk && m_vfs != nullptr)
                         {
                             wax::String vfs = ToVfsPath(normalized.View());
                             onDisk = m_vfs->ReadSync(vfs.View()).Size() > 0;
                         }
 
                         if (!onDisk)
+                        {
                             prev.m_kind = FileChangeKind::DELETED;
+                        }
                         else if (prev.m_kind == FileChangeKind::CREATED || changes[i].m_kind == FileChangeKind::CREATED)
+                        {
                             prev.m_kind = FileChangeKind::CREATED;
+                        }
                         else
+                        {
                             prev.m_kind = FileChangeKind::MODIFIED;
+                        }
                     }
                     else
                     {
@@ -163,7 +175,9 @@ namespace nectar
         }
 
         if (deduped.Size() == 0)
+        {
             return 0;
+        }
 
         // Classify events
         wax::Vector<size_t> deletedIndices{*m_alloc};
@@ -177,9 +191,13 @@ namespace nectar
             hive::LogTrace(LOG_HOTRELOAD, "{}: {}", kind, deduped[i].m_path.CStr());
 
             if (deduped[i].m_kind == FileChangeKind::DELETED)
+            {
                 deletedIndices.PushBack(i);
+            }
             else
+            {
                 existsIndices.PushBack(i);
+            }
         }
 
         // Rename detection: match deleted by content hash against created/modified
@@ -188,7 +206,7 @@ namespace nectar
         deletedConsumed.Resize(deletedIndices.Size(), false);
         existsConsumed.Resize(existsIndices.Size(), false);
 
-        if (m_vfs && deletedIndices.Size() > 0 && existsIndices.Size() > 0)
+        if (m_vfs != nullptr && deletedIndices.Size() > 0 && existsIndices.Size() > 0)
         {
             wax::HashMap<ContentHash, size_t> deletedByHash{*m_alloc, deletedIndices.Size()};
 
@@ -196,8 +214,10 @@ namespace nectar
             {
                 wax::String vfsPath = ToVfsPath(deduped[deletedIndices[di]].m_path.View());
                 auto* record = m_db->FindByPath(vfsPath.View());
-                if (record && record->m_contentHash.IsValid())
+                if (record != nullptr && record->m_contentHash.IsValid())
+                {
                     deletedByHash.Insert(record->m_contentHash, di);
+                }
             }
 
             for (size_t ei = 0; ei < existsIndices.Size(); ++ei)
@@ -205,21 +225,29 @@ namespace nectar
                 wax::String vfsPath = ToVfsPath(deduped[existsIndices[ei]].m_path.View());
                 auto fileData = m_vfs->ReadSync(vfsPath.View());
                 if (fileData.Size() == 0)
+                {
                     continue;
+                }
 
                 ContentHash hash = ContentHash::FromData(fileData.Data(), fileData.Size());
                 auto* matchIdx = deletedByHash.Find(hash);
-                if (!matchIdx)
+                if (matchIdx == nullptr)
+                {
                     continue;
+                }
 
                 size_t di = *matchIdx;
                 if (deletedConsumed[di])
+                {
                     continue;
+                }
 
                 wax::String oldVfs = ToVfsPath(deduped[deletedIndices[di]].m_path.View());
                 auto* record = m_db->FindByPath(oldVfs.View());
-                if (!record)
+                if (record == nullptr)
+                {
                     continue;
+                }
 
                 AssetId id = record->m_uuid;
                 AssetRecord updated = *record;
@@ -246,8 +274,10 @@ namespace nectar
                         auto newHiveid = std::filesystem::path{newAbs.CStr()}.concat(".hiveid");
                         std::filesystem::rename(oldHiveid, newHiveid, ec);
                         if (!ec)
+                        {
                             hive::LogInfo(LOG_HOTRELOAD, "{} .hiveid: {} -> {}", verb, oldHiveid.generic_string(),
                                           newHiveid.generic_string());
+                        }
                     }
                 }
 
@@ -265,7 +295,7 @@ namespace nectar
             wax::StringView lookupPath = vfsPath.View();
 
             auto* record = m_db->FindByPath(lookupPath);
-            if (!record)
+            if (record == nullptr)
             {
                 wax::String abs{*m_alloc};
                 abs.Append(m_baseDir.Data(), m_baseDir.Size());
@@ -273,7 +303,9 @@ namespace nectar
 
                 HiveIdData hid{};
                 if (!ReadHiveId(abs.CStr(), hid, *m_alloc))
+                {
                     return;
+                }
 
                 AssetRecord newRec{};
                 newRec.m_uuid = hid.m_guid;
@@ -286,20 +318,24 @@ namespace nectar
                 m_db->Insert(static_cast<AssetRecord&&>(newRec));
 
                 record = m_db->FindByPath(lookupPath);
-                if (!record)
+                if (record == nullptr)
+                {
                     return;
+                }
 
                 hive::LogInfo(LOG_HOTRELOAD, "Auto-registered: {}", vfsPath.CStr());
             }
 
-            if (m_vfs && record->m_contentHash.IsValid())
+            if (m_vfs != nullptr && record->m_contentHash.IsValid())
             {
                 auto sourceData = m_vfs->ReadSync(lookupPath);
                 if (sourceData.Size() > 0)
                 {
                     ContentHash currentHash = ContentHash::FromData(sourceData.Data(), sourceData.Size());
                     if (currentHash == record->m_contentHash)
+                    {
                         return;
+                    }
                 }
             }
 
@@ -310,7 +346,7 @@ namespace nectar
             req.m_assetId = id;
 
             ImportOutput result{};
-            if (m_settingsFn)
+            if (m_settingsFn != nullptr)
             {
                 HiveDocument settings{*m_alloc};
                 m_settingsFn(id, lookupPath, settings, m_settingsUserData);
@@ -324,7 +360,9 @@ namespace nectar
             if (!result.m_success)
             {
                 if (result.m_errorMessage.View().Contains("No importer"))
+                {
                     return;
+                }
                 hive::LogWarning(LOG_HOTRELOAD, "Import failed '{}': {}", vfsPath.CStr(),
                                  result.m_errorMessage.CStr());
                 return;
@@ -338,13 +376,17 @@ namespace nectar
             wax::Vector<AssetId> dependents{*m_alloc};
             m_db->GetDependencyGraph().GetTransitiveDependents(id, DepKind::ALL, dependents);
             for (size_t j = 0; j < dependents.Size(); ++j)
+            {
                 toRecook.PushBack(dependents[j]);
+            }
         };
 
         for (size_t ei = 0; ei < existsIndices.Size(); ++ei)
         {
             if (existsConsumed[ei])
+            {
                 continue;
+            }
             processImport(deduped[existsIndices[ei]].m_path.View());
         }
 
@@ -352,7 +394,9 @@ namespace nectar
         for (size_t di = 0; di < deletedIndices.Size(); ++di)
         {
             if (deletedConsumed[di])
+            {
                 continue;
+            }
 
             wax::String vfsPath = ToVfsPath(deduped[deletedIndices[di]].m_path.View());
 
@@ -362,7 +406,9 @@ namespace nectar
                 wax::String prefix{*m_alloc};
                 prefix.Append(vfsPath.Data(), vfsPath.Size());
                 if (prefix.Size() > 0 && prefix[prefix.Size() - 1] != '/')
+                {
                     prefix.Append("/", 1);
+                }
 
                 size_t affected{0};
                 m_db->ForEach([&](AssetId id, const AssetRecord& rec) {
@@ -378,7 +424,7 @@ namespace nectar
             }
 
             auto* record = m_db->FindByPath(vfsPath.View());
-            if (record)
+            if (record != nullptr)
             {
                 hive::LogInfo(LOG_HOTRELOAD, "Deleted: {}", vfsPath.CStr());
                 m_lastReloaded.PushBack(record->m_uuid);
@@ -390,7 +436,9 @@ namespace nectar
                 auto hiveidPath = std::filesystem::path{absPath.CStr()}.concat(".hiveid");
                 std::error_code ec;
                 if (std::filesystem::remove(hiveidPath, ec))
+                {
                     hive::LogInfo(LOG_HOTRELOAD, "Removed .hiveid: {}", hiveidPath.generic_string());
+                }
             }
         }
 

@@ -33,10 +33,6 @@ namespace comb
     public:
         using Marker = size_t;
 
-        /**
-         * Construct stack allocator with given capacity
-         * @param capacity Size in bytes to allocate from OS
-         */
         explicit StackAllocator(size_t capacity)
             : m_capacity{capacity}
             , m_current{0}
@@ -57,7 +53,7 @@ namespace comb
         ~StackAllocator()
         {
 #if COMB_MEM_DEBUG
-            if (m_registry)
+            if (m_registry != nullptr)
             {
                 if constexpr (debug::kLeakDetectionEnabled)
                 {
@@ -67,7 +63,7 @@ namespace comb
             }
 #endif
 
-            if (m_memoryBlock)
+            if (m_memoryBlock != nullptr)
             {
                 FreePages(m_memoryBlock, m_capacity);
             }
@@ -99,7 +95,7 @@ namespace comb
             if (this != &other)
             {
 #if COMB_MEM_DEBUG
-                if (m_registry)
+                if (m_registry != nullptr)
                 {
                     if constexpr (debug::kLeakDetectionEnabled)
                     {
@@ -109,7 +105,7 @@ namespace comb
                 }
 #endif
 
-                if (m_memoryBlock)
+                if (m_memoryBlock != nullptr)
                 {
                     FreePages(m_memoryBlock, m_capacity);
                 }
@@ -134,50 +130,33 @@ namespace comb
             return *this;
         }
 
-        /**
-         * Allocate memory with specified size and alignment
-         * Bumps current pointer forward
-         *
-         * @param size Number of bytes to allocate
-         * @param alignment Required alignment (must be power of 2)
-         * @param tag Optional allocation tag for debugging (e.g., "TempBuffer")
-         * @return Pointer to allocated memory, or nullptr if out of space
-         *
-         * Note: tag parameter is zero-cost when COMB_MEM_DEBUG=0
-         *
-         * IMPORTANT: Does NOT support individual deallocation.
-         * Use GetMarker() + FreeToMarker() for scoped cleanup.
-         */
+        // Bump-allocates. No individual deallocation — use GetMarker()/FreeToMarker() for scoped cleanup.
+        // tag is zero-cost when COMB_MEM_DEBUG=0.
         [[nodiscard]] void* Allocate(size_t size, size_t alignment, const char* tag = nullptr)
         {
 #if COMB_MEM_DEBUG
             void* result = AllocateDebug(size, alignment, tag);
 #else
-            (void)tag; // Suppress unused warning
+            (void)tag;
 
             hive::Assert(size > 0, "Cannot allocate 0 bytes");
             hive::Assert(IsPowerOfTwo(alignment), "Alignment must be power of 2");
 
-            // Calculate the actual current address
+            // Align the address itself, not just the offset — base may not be alignment-aligned.
             const uintptr_t current_addr = reinterpret_cast<uintptr_t>(m_memoryBlock) + m_current;
-
-            // Align the address (not just the offset!)
             const uintptr_t aligned_addr = AlignUp(current_addr, alignment);
 
-            // Calculate the new offset from base
             const size_t aligned_current = aligned_addr - reinterpret_cast<uintptr_t>(m_memoryBlock);
             const size_t padding = aligned_current - m_current;
 
-            // Check if we have enough space
             const size_t required = padding + size;
             const size_t remaining = m_capacity - m_current;
 
             if (required > remaining)
             {
-                return nullptr; // Out of memory
+                return nullptr;
             }
 
-            // Allocate
             m_current = aligned_current + size;
             void* result = reinterpret_cast<void*>(aligned_addr);
 #endif
@@ -185,15 +164,7 @@ namespace comb
             return result;
         }
 
-        /**
-         * Deallocate memory - NO-OP for StackAllocator
-         *
-         * @param ptr Pointer to deallocate (ignored)
-         *
-         * NOTE: Individual deallocation is not supported.
-         * Use GetMarker() + FreeToMarker() for scoped cleanup,
-         * or Reset() to free all memory.
-         */
+        // No-op in release. Individual deallocation unsupported — use FreeToMarker() or Reset().
         void Deallocate(void* ptr)
         {
 #if COMB_MEM_DEBUG
@@ -203,27 +174,12 @@ namespace comb
 #endif
         }
 
-        /**
-         * Get current marker position
-         * Save this to later restore allocator state
-         *
-         * @return Marker representing current allocation position
-         */
         [[nodiscard]] Marker GetMarker() const noexcept
         {
             return m_current;
         }
 
-        /**
-         * Free all allocations back to a saved marker
-         * Restores allocator to state when marker was created
-         *
-         * @param marker Marker obtained from GetMarker()
-         *
-         * IMPORTANT: Marker must be valid (from this allocator).
-         * Passing invalid marker is undefined behavior.
-         * Markers must be freed in LIFO order (stack discipline).
-         */
+        // Marker must come from this allocator (else UB) and be freed in LIFO order.
         void FreeToMarker(Marker marker)
         {
             hive::Assert(marker <= m_current, "Invalid marker (beyond current position)");
@@ -232,7 +188,7 @@ namespace comb
             m_current = marker;
 
 #if COMB_MEM_DEBUG
-            if (m_registry)
+            if (m_registry != nullptr)
             {
                 void* markerAddress = static_cast<std::byte*>(m_memoryBlock) + marker;
                 m_releaseCurrent = m_registry->CalculateBytesUsedUpTo(markerAddress);
@@ -241,27 +197,19 @@ namespace comb
 #endif
         }
 
-        /**
-         * Reset allocator - frees all allocations
-         * Equivalent to FreeToMarker(0)
-         */
         void Reset()
         {
             m_current = 0;
 
 #if COMB_MEM_DEBUG
             m_releaseCurrent = 0;
-            if (m_registry)
+            if (m_registry != nullptr)
             {
                 m_registry->Clear();
             }
 #endif
         }
 
-        /**
-         * Get number of bytes currently allocated
-         * @return Bytes used
-         */
         [[nodiscard]] size_t GetUsedMemory() const noexcept
         {
 #if COMB_MEM_DEBUG
@@ -271,28 +219,16 @@ namespace comb
 #endif
         }
 
-        /**
-         * Get total capacity of allocator
-         * @return Total bytes available
-         */
         [[nodiscard]] size_t GetTotalMemory() const noexcept
         {
             return m_capacity;
         }
 
-        /**
-         * Get allocator name for debugging
-         * @return "StackAllocator"
-         */
         [[nodiscard]] const char* GetName() const noexcept
         {
             return "StackAllocator";
         }
 
-        /**
-         * Get number of free bytes remaining
-         * @return Bytes available for allocation
-         */
         [[nodiscard]] size_t GetFreeMemory() const noexcept
         {
 #if COMB_MEM_DEBUG
@@ -331,12 +267,11 @@ namespace comb
         hive::Assert(IsPowerOfTwo(alignment), "Alignment must be power of 2");
         hive::Assert(size > 0, "Cannot allocate 0 bytes");
 
-        // 1. Calculate space needed (user size + guard bytes)
         const size_t guardSize = sizeof(uint32_t);
         const size_t totalSize = size + 2 * guardSize;
 
-        // 2. Align the USER pointer (after front guard), not the raw pointer
-        //    Layout: [GUARD_FRONT (4B)][user data (aligned)][GUARD_BACK (4B)]
+        // Align the USER pointer (after front guard), not the raw pointer — alignment contract is on user data.
+        // Layout: [GUARD_FRONT (4B)][user data (aligned)][GUARD_BACK (4B)]
         const uintptr_t current_addr = reinterpret_cast<uintptr_t>(m_memoryBlock) + m_current;
         const uintptr_t user_addr_unaligned = current_addr + guardSize;
         const uintptr_t user_addr_aligned = AlignUp(user_addr_unaligned, alignment);
@@ -350,7 +285,7 @@ namespace comb
         if (required > remaining)
         {
             hive::LogError(comb::LOG_COMB_ROOT, "[MEM_DEBUG] [{}] Allocation failed: size={}, alignment={}, tag={}",
-                           GetName(), size, alignment, tag ? tag : "<no tag>");
+                           GetName(), size, alignment, (tag != nullptr) ? tag : "<no tag>");
             return nullptr;
         }
 
@@ -361,20 +296,17 @@ namespace comb
         const size_t release_aligned = AlignUp(m_releaseCurrent, alignment);
         m_releaseCurrent = release_aligned + size;
 
-        // 3. Write guard bytes
         debug::WriteGuard(rawPtr);
 
         void* userPtr = reinterpret_cast<void*>(user_addr_aligned);
 
         debug::WriteGuard(static_cast<std::byte*>(userPtr) + size);
 
-        // 4. Initialize memory with pattern (detect uninitialized reads)
         if constexpr (debug::kMemDebugEnabled)
         {
             std::memset(userPtr, debug::allocatedMemoryPattern, size);
         }
 
-        // 5. Register allocation
         debug::AllocationInfo info{};
         info.m_address = userPtr;
         info.m_size = size;
@@ -390,7 +322,6 @@ namespace comb
 
         m_registry->RegisterAllocation(info);
 
-        // 6. Record in history
 #if COMB_MEM_DEBUG_HISTORY
         m_history->RecordAllocation(info);
 #endif
@@ -400,13 +331,12 @@ namespace comb
 
     inline void StackAllocator::DeallocateDebug(void* ptr)
     {
-        // StackAllocator doesn't support individual deallocation
-        // But we still track it for debugging purposes
-
-        if (!ptr)
+        // StackAllocator doesn't free individual allocations — we only track here for debug diagnostics.
+        if (ptr == nullptr)
+        {
             return;
+        }
 
-        // 1. Find allocation info
         auto infoOpt = m_registry->FindAllocation(ptr);
         if (!infoOpt)
         {
@@ -416,7 +346,6 @@ namespace comb
         }
         auto& info = *infoOpt;
 
-        // 2. Check guard bytes
         if constexpr (debug::kMemDebugEnabled)
         {
             if (!info.CheckGuards())
@@ -439,21 +368,15 @@ namespace comb
             }
         }
 
-        // 3. Fill with freed pattern (detect use-after-free)
 #if COMB_MEM_DEBUG_USE_AFTER_FREE
         std::memset(ptr, debug::freedMemoryPattern, info.m_size);
 #endif
 
-        // 4. Record deallocation in history
 #if COMB_MEM_DEBUG_HISTORY
         m_history->RecordDeallocation(ptr, info.m_size);
 #endif
 
-        // 5. Unregister allocation
         m_registry->UnregisterAllocation(ptr);
-
-        // NOTE: StackAllocator doesn't actually free individual allocations
-        // Memory is only freed on FreeToMarker() or Reset()
     }
 
 #endif // COMB_MEM_DEBUG

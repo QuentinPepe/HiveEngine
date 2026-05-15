@@ -50,8 +50,8 @@ namespace comb
             size_t used_count{0};
             size_t slot_size{0};
             size_t total_size{0};
-            size_t m_freeListOffset{0}; // Track offset for Reset()
-            size_t m_userSize{0};        // Track user-visible size (without guard bytes)
+            size_t m_freeListOffset{0};
+            size_t m_userSize{0};
 
             void Initialize(size_t size, size_t free_list_offset = 0, size_t user_size = 0)
             {
@@ -59,20 +59,18 @@ namespace comb
                 total_size = ObjectsPerSlab * slot_size;
                 m_freeListOffset = free_list_offset;
 
-                // user_size: raw size class (without debug overhead)
+                // user_size = raw size class without debug overhead.
                 m_userSize = (user_size > 0) ? user_size : size;
 
-                // Allocate memory from OS
                 memory_block = AllocatePages(total_size);
                 hive::Assert(memory_block != nullptr, "Failed to allocate slab memory");
 
-                // Build free-list (with optional offset for debug guard bytes)
                 RebuildFreeList(free_list_offset);
             }
 
             void Destroy()
             {
-                if (memory_block)
+                if (memory_block != nullptr)
                 {
                     FreePages(memory_block, total_size);
                     memory_block = nullptr;
@@ -82,7 +80,7 @@ namespace comb
 
             void RebuildFreeList(size_t free_list_offset)
             {
-                // In debug mode, free_list_offset skips the guard bytes at the start of each slot
+                // free_list_offset skips the guard bytes at the start of each slot in debug mode.
                 char* current = static_cast<char*>(memory_block) + free_list_offset;
                 free_list_head = current;
 
@@ -99,13 +97,12 @@ namespace comb
 
             void RebuildFreeList()
             {
-                // Use stored offset from Initialize()
                 RebuildFreeList(m_freeListOffset);
             }
 
             void* Allocate()
             {
-                if (!free_list_head)
+                if (free_list_head == nullptr)
                 {
                     return nullptr;
                 }
@@ -118,8 +115,10 @@ namespace comb
 
             void Deallocate(void* ptr)
             {
-                if (!ptr)
+                if (ptr == nullptr)
+                {
                     return;
+                }
 
                 hive::Assert(used_count > 0, "Deallocate called more than Allocate");
 
@@ -130,8 +129,10 @@ namespace comb
 
             bool Contains(void* ptr) const
             {
-                if (!ptr || !memory_block)
+                if (ptr == nullptr || memory_block == nullptr)
+                {
                     return false;
+                }
 
                 const char* start = static_cast<const char*>(memory_block);
                 const char* end = start + (ObjectsPerSlab * slot_size);
@@ -142,13 +143,13 @@ namespace comb
 
             size_t GetUsedMemory() const
             {
-                // Return user-visible memory (excluding guard bytes)
+                // User-visible memory excludes guard bytes.
                 return used_count * m_userSize;
             }
 
             size_t GetTotalMemory() const
             {
-                // Return user-visible capacity (excluding guard bytes)
+                // User-visible capacity excludes guard bytes.
                 return ObjectsPerSlab * m_userSize;
             }
 
@@ -170,16 +171,13 @@ namespace comb
                     return i;
                 }
             }
-            return NumSlabs; // No slab large enough
+            return NumSlabs;
         }
 
     public:
         SlabAllocator(const SlabAllocator&) = delete;
         SlabAllocator& operator=(const SlabAllocator&) = delete;
 
-        /**
-         * Construct slab allocator and initialize all slabs
-         */
         SlabAllocator()
         {
             for (size_t i = 0; i < NumSlabs; ++i)
@@ -197,30 +195,21 @@ namespace comb
             }
 
 #if COMB_MEM_DEBUG
-            // Create debug tracking objects
             m_registry = std::make_unique<debug::AllocationRegistry>();
             m_history = std::make_unique<debug::AllocationHistory>();
-
-            // Register with global tracker
             debug::GlobalMemoryTracker::GetInstance().RegisterAllocator(GetName(), m_registry.get());
 #endif
         }
 
-        /**
-         * Destructor - frees all slab memory
-         */
         ~SlabAllocator()
         {
 #if COMB_MEM_DEBUG
-            if (m_registry)
+            if (m_registry != nullptr)
             {
-                // Report leaks before destruction
                 if constexpr (debug::kLeakDetectionEnabled)
                 {
                     m_registry->ReportLeaks(GetName());
                 }
-
-                // Unregister from global tracker
                 debug::GlobalMemoryTracker::GetInstance().UnregisterAllocator(m_registry.get());
             }
 #endif
@@ -231,12 +220,7 @@ namespace comb
             }
         }
 
-        /**
-         * Move constructor
-         *
-         * Transfers ownership of memory blocks and debug tracking to new allocator.
-         * All allocations made before move can still be deallocated from moved-to allocator.
-         */
+        // Allocations made before the move stay valid on the moved-to allocator.
         SlabAllocator(SlabAllocator&& other) noexcept
             : slabs_{std::move(other.slabs_)}
 #if COMB_MEM_DEBUG
@@ -244,10 +228,7 @@ namespace comb
             , m_history{std::move(other.m_history)}
 #endif
         {
-            // Note: m_registry and m_history are automatically moved via unique_ptr
-            // No need to update global tracker - it still points to the same registry object
-
-            // Invalidate other
+            // unique_ptr move keeps registry identity, so the global tracker stays valid.
             for (auto& slab : other.slabs_)
             {
                 slab.memory_block = nullptr;
@@ -261,36 +242,28 @@ namespace comb
             if (this != &other)
             {
 #if COMB_MEM_DEBUG
-                if (m_registry)
+                if (m_registry != nullptr)
                 {
-                    // Report leaks for our current allocations before we destroy them
                     if constexpr (debug::kLeakDetectionEnabled)
                     {
                         m_registry->ReportLeaks(GetName());
                     }
-
-                    // Unregister from global tracker
                     debug::GlobalMemoryTracker::GetInstance().UnregisterAllocator(m_registry.get());
                 }
 #endif
 
-                // Destroy our slabs
                 for (auto& slab : slabs_)
                 {
                     slab.Destroy();
                 }
 
-                // Move from other
                 slabs_ = std::move(other.slabs_);
 
 #if COMB_MEM_DEBUG
-                // Move the debug tracking objects
                 m_registry = std::move(other.m_registry);
                 m_history = std::move(other.m_history);
-                // No need to re-register - global tracker still points to same registry object
 #endif
 
-                // Invalidate other
                 for (auto& slab : other.slabs_)
                 {
                     slab.memory_block = nullptr;
@@ -301,32 +274,19 @@ namespace comb
             return *this;
         }
 
-        /**
-         * Allocate memory from appropriate slab
-         *
-         * @param size Number of bytes to allocate
-         * @param alignment Required alignment (must be <= alignof(std::max_align_t))
-         * @param tag Optional allocation tag for debugging (e.g., "Entity #42")
-         * @return Pointer to allocated memory, or nullptr if:
-         *         - No slab can fit the requested size
-         *         - Appropriate slab is exhausted
-         *
-         * Note: tag parameter is zero-cost when COMB_MEM_DEBUG=0
-         *
-         * IMPORTANT: Does NOT fallback to operator new. Returns nullptr when out of memory.
-         */
+        // Returns nullptr if no slab fits or the matching slab is exhausted — no operator new fallback.
+        // tag is zero-cost when COMB_MEM_DEBUG=0.
         [[nodiscard]] void* Allocate(size_t size, size_t alignment, const char* tag = nullptr)
         {
 #if COMB_MEM_DEBUG
             void* ptr = AllocateDebug(size, alignment, tag);
 #else
-            (void)tag; // Suppress unused warning
+            (void)tag;
 
             hive::Assert(alignment <= alignof(std::max_align_t), "SlabAllocator alignment limited to max_align_t");
 
             const size_t slab_index = FindSlabIndex(size);
 
-            // No slab large enough
             if (slab_index >= NumSlabs)
             {
                 return nullptr;
@@ -335,32 +295,26 @@ namespace comb
             void* ptr = slabs_[slab_index].Allocate();
 #endif
 
-            if (ptr)
+            if (ptr != nullptr)
             {
                 HIVE_PROFILE_ALLOC(ptr, size, GetName());
             }
             return ptr;
         }
 
-        /**
-         * Deallocate memory back to appropriate slab
-         *
-         * @param ptr Pointer to deallocate (can be nullptr)
-         *
-         * IMPORTANT: Pointer must have been allocated from THIS allocator.
-         * Finds which slab owns the pointer and returns it to that slab's free-list.
-         */
+        // Pointer must come from this allocator. Locates the owning slab and returns to its free-list.
         void Deallocate(void* ptr)
         {
-            if (!ptr)
+            if (ptr == nullptr)
+            {
                 return;
+            }
 
             HIVE_PROFILE_FREE(ptr, GetName());
 
 #if COMB_MEM_DEBUG
             DeallocateDebug(ptr);
 #else
-            // Find which slab owns this pointer
             for (auto& slab : slabs_)
             {
                 if (slab.Contains(ptr))
@@ -370,15 +324,10 @@ namespace comb
                 }
             }
 
-            // Pointer not from any slab - error
             hive::Assert(false, "Pointer not allocated from this SlabAllocator");
 #endif
         }
 
-        /**
-         * Reset all slabs - marks all memory as free
-         * Rebuilds free-lists for all slabs
-         */
         void Reset()
         {
             for (auto& slab : slabs_)
@@ -387,17 +336,13 @@ namespace comb
             }
 
 #if COMB_MEM_DEBUG
-            // Clear debug tracking registry
-            if (m_registry)
+            if (m_registry != nullptr)
             {
                 m_registry->Clear();
             }
 #endif
         }
 
-        /**
-         * Get total bytes currently allocated across all slabs
-         */
         [[nodiscard]] size_t GetUsedMemory() const noexcept
         {
             size_t total = 0;
@@ -408,9 +353,6 @@ namespace comb
             return total;
         }
 
-        /**
-         * Get total capacity across all slabs
-         */
         [[nodiscard]] size_t GetTotalMemory() const noexcept
         {
             size_t total = 0;
@@ -421,42 +363,27 @@ namespace comb
             return total;
         }
 
-        /**
-         * Get allocator name for debugging
-         */
         [[nodiscard]] const char* GetName() const noexcept
         {
             return "SlabAllocator";
         }
 
-        /**
-         * Get number of size classes
-         */
         [[nodiscard]] constexpr size_t GetSlabCount() const noexcept
         {
             return NumSlabs;
         }
 
-        /**
-         * Get size classes array
-         */
         [[nodiscard]] constexpr auto GetSizeClasses() const noexcept
         {
             return sizes_;
         }
 
-        /**
-         * Get usage stats for a specific slab
-         */
         [[nodiscard]] size_t GetSlabUsedCount(size_t slab_index) const noexcept
         {
             hive::Assert(slab_index < NumSlabs, "Slab index out of range");
             return slabs_[slab_index].used_count;
         }
 
-        /**
-         * Get free count for a specific slab
-         */
         [[nodiscard]] size_t GetSlabFreeCount(size_t slab_index) const noexcept
         {
             hive::Assert(slab_index < NumSlabs, "Slab index out of range");
@@ -486,31 +413,29 @@ namespace comb
     {
         hive::Assert(alignment <= alignof(std::max_align_t), "SlabAllocator alignment limited to max_align_t");
 
+        // Check fit BEFORE adding guard bytes — user size is what callers care about.
         const size_t slab_index = FindSlabIndex(size);
 
-        // No slab large enough - check BEFORE adding guard bytes
         if (slab_index >= NumSlabs)
         {
             hive::LogError(comb::LOG_COMB_ROOT, "[MEM_DEBUG] [{}] No slab can fit size={}, max_size={}, tag={}",
-                           GetName(), size, sizes_[NumSlabs - 1], tag ? tag : "<no tag>");
+                           GetName(), size, sizes_[NumSlabs - 1], (tag != nullptr) ? tag : "<no tag>");
             return nullptr;
         }
 
-        // Get actual slot size for this slab
         const size_t slotSize = sizes_[slab_index];
 
-        // 1. Pop from slab free-list
-        // In debug mode, Allocate() returns a pointer after the guard front
+        // In debug mode, Allocate() returns a pointer positioned after the guard front.
         void* userPtr = slabs_[slab_index].Allocate();
-        if (!userPtr)
+        if (userPtr == nullptr)
         {
             hive::LogError(comb::LOG_COMB_ROOT,
                            "[MEM_DEBUG] [{}] Slab {} (size={}) exhausted: requested size={}, tag={}", GetName(),
-                           slab_index, slotSize, size, tag ? tag : "<no tag>");
+                           slab_index, slotSize, size, (tag != nullptr) ? tag : "<no tag>");
             return nullptr;
         }
 
-        // 2. Add guard bytes in-place within the slab slot
+        // Guard bytes live in-place within the slab slot.
         // Layout: [GUARD_FRONT (4B)][user data (size)][GUARD_BACK (4B)]
         const size_t guardSize = sizeof(uint32_t);
         void* rawPtr = static_cast<std::byte*>(userPtr) - guardSize;
@@ -518,13 +443,11 @@ namespace comb
         debug::WriteGuard(rawPtr);
         debug::WriteGuard(static_cast<std::byte*>(userPtr) + size);
 
-        // 3. Initialize memory with pattern (detect uninitialized reads)
         if constexpr (debug::kMemDebugEnabled)
         {
             std::memset(userPtr, debug::allocatedMemoryPattern, size);
         }
 
-        // 4. Register allocation
         debug::AllocationInfo info{};
         info.m_address = userPtr;
         info.m_size = size;
@@ -540,7 +463,6 @@ namespace comb
 
         m_registry->RegisterAllocation(info);
 
-        // 5. Record in history
 #if COMB_MEM_DEBUG_HISTORY
         m_history->RecordAllocation(info);
 #endif
@@ -551,10 +473,11 @@ namespace comb
     template <size_t ObjectsPerSlab, size_t... SizeClasses>
     void SlabAllocator<ObjectsPerSlab, SizeClasses...>::DeallocateDebug(void* ptr)
     {
-        if (!ptr)
+        if (ptr == nullptr)
+        {
             return;
+        }
 
-        // 1. Find allocation info
         auto infoOpt = m_registry->FindAllocation(ptr);
         if (!infoOpt)
         {
@@ -565,7 +488,6 @@ namespace comb
         }
         auto& info = *infoOpt;
 
-        // 2. Check guard bytes
         if constexpr (debug::kMemDebugEnabled)
         {
             if (!info.CheckGuards())
@@ -588,25 +510,19 @@ namespace comb
             }
         }
 
-        // 3. Fill with freed pattern (detect use-after-free)
 #if COMB_MEM_DEBUG_USE_AFTER_FREE
         std::memset(ptr, debug::freedMemoryPattern, info.m_size);
 #endif
 
-        // 4. Record deallocation in history
 #if COMB_MEM_DEBUG_HISTORY
         m_history->RecordDeallocation(ptr, info.m_size);
 #endif
 
-        // 5. Unregister allocation
         m_registry->UnregisterAllocation(ptr);
 
-        // 6. Return to slab free-list
-        // In debug mode, the slab's free-list stores pointers in user data area (after guard)
-        // So we deallocate using ptr directly (which is userPtr)
+        // Debug free-list stores pointers in user data area (after guard), so deallocate using ptr (= userPtr).
         for (auto& slab : slabs_)
         {
-            // Check if this slab owns the memory block containing ptr
             if (slab.Contains(ptr))
             {
                 slab.Deallocate(ptr);
@@ -614,7 +530,6 @@ namespace comb
             }
         }
 
-        // Should never happen - ptr should be from one of our slabs
         hive::Assert(false, "Internal error: ptr not found in any slab");
     }
 
