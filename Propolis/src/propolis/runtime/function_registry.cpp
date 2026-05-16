@@ -45,7 +45,12 @@ namespace propolis
 
     void RegisterAllBlueprintFunctions(queen::World& world)
     {
-        if (!world.Resource<FunctionRegistry>())
+        // The engine pre-inserts an empty FunctionRegistry from RegisterPropolisSystem
+        // so the resource's destructor and the inner Vector's allocator both live in
+        // the engine module — surviving gameplay DLL hot-reloads. If absent here, the
+        // engine didn't run its init path (test harness etc.); fall back to inserting
+        // module-locally with the understanding that hot-reload won't be supported.
+        if (world.Resource<FunctionRegistry>() == nullptr)
         {
             world.InsertResource(FunctionRegistry{});
         }
@@ -54,12 +59,20 @@ namespace propolis
 
         FunctionEntry* node = detail::BlueprintFunctionHead();
         size_t count = 0;
-        while (node)
+        while (node != nullptr)
         {
             registry->Register(*node);
             node = node->m_next;
             ++count;
         }
+
+        // In shared-engine builds, BlueprintFunctionHead lives in hive_engine.dll and
+        // is shared across the gameplay DLL hot-reload cycle. The FunctionEntry nodes
+        // themselves live in the gameplay DLL's read-only segment, so after unload
+        // their addresses become dangling. Reset the head now that we've drained it
+        // — when the next gameplay DLL loads, its static initializers will see a
+        // null head and rebuild a clean list pointing only into the new DLL.
+        detail::BlueprintFunctionHead() = nullptr;
 
         hive::LogInfo(LOG_PROPOLIS_RUNTIME,
                       "Registered {} blueprint functions from gameplay module", count);

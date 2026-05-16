@@ -2,6 +2,7 @@
 #include <waggle/play_state.h>
 #include <waggle/time.h>
 
+#include <propolis/runtime/function_registry.h>
 #include <propolis/runtime/propolis_executor.h>
 #include <propolis/runtime/propolis_script.h>
 #include <propolis/runtime/script_registry.h>
@@ -15,6 +16,16 @@ namespace waggle
         if (world.Resource<propolis::ScriptRegistry>() == nullptr)
         {
             world.InsertResource(propolis::ScriptRegistry{});
+        }
+
+        // Pre-insert engine-side so the resource's destructor and the inner
+        // Vector's allocator both live in the engine module. If the gameplay
+        // DLL created it instead, hot-reload would leave dangling function
+        // pointers (Comb is statically linked: each module has its own
+        // GetDefaultAllocator() static).
+        if (world.Resource<propolis::FunctionRegistry>() == nullptr)
+        {
+            world.InsertResource(propolis::FunctionRegistry{});
         }
 
         if (world.Resource<propolis::ScriptTime>() == nullptr)
