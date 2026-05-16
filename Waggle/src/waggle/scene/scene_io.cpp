@@ -22,6 +22,7 @@
 #include <waggle/time.h>
 
 #include <cstdio>
+#include <cstring>
 
 namespace waggle
 {
@@ -134,6 +135,34 @@ namespace waggle
 
         hive::LogInfo(LOG_SCENE, "Scene loaded: {} ({} entities, {} components, {} skipped)",
                       path, result.m_entitiesLoaded, result.m_componentsLoaded, result.m_componentsSkipped);
+        return true;
+    }
+
+    bool LoadSceneFromMemory(queen::World& world, const queen::ComponentRegistry<256>& registry,
+                             const char* jsonData, size_t jsonSize)
+    {
+        if (jsonData == nullptr || jsonSize == 0)
+        {
+            hive::LogError(LOG_SCENE, "LoadSceneFromMemory: empty buffer");
+            return false;
+        }
+
+        wax::Vector<char> buffer{comb::GetDefaultAllocator()};
+        buffer.Resize(jsonSize + 1, '\0');
+        std::memcpy(buffer.Data(), jsonData, jsonSize);
+
+        auto result = queen::WorldDeserializer::Deserialize(world, registry, buffer.Data());
+        if (!result.m_success)
+        {
+            hive::LogError(LOG_SCENE, "Failed to deserialize scene: {}",
+                           result.m_error != nullptr ? result.m_error : "unknown");
+            return false;
+        }
+
+        EnsureRuntimeTransformComponents(world);
+
+        hive::LogInfo(LOG_SCENE, "Scene loaded from memory ({} bytes, {} entities, {} components, {} skipped)",
+                      jsonSize, result.m_entitiesLoaded, result.m_componentsLoaded, result.m_componentsSkipped);
         return true;
     }
 

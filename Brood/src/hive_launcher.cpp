@@ -36,6 +36,7 @@
 #if HIVE_MODE_EDITOR
 #include <forge/forge_main_window.h>
 #include <forge/project_hub.h>
+#include <forge/ship_dialog.h>
 #include <forge/theme.h>
 
 #include <QApplication>
@@ -206,7 +207,34 @@ namespace
             {
                 if (startupProjectPath.empty())
                 {
-                    startupProjectPath = std::filesystem::current_path(ec) / "project.hive";
+                    const std::filesystem::path cwd = std::filesystem::current_path(ec);
+                    const std::filesystem::path exeDir = GetCurrentExecutablePath().parent_path();
+                    const std::filesystem::path cwdProjectHive = cwd / "project.hive";
+                    const std::filesystem::path cwdPak = cwd / "assets.hivepak";
+                    const std::filesystem::path exeProjectHive = exeDir / "project.hive";
+                    const std::filesystem::path exePak = exeDir / "assets.hivepak";
+
+                    std::error_code resolveEc;
+                    if (std::filesystem::exists(cwdProjectHive, resolveEc) && !resolveEc)
+                    {
+                        startupProjectPath = cwdProjectHive;
+                    }
+                    else if (std::filesystem::exists(cwdPak, resolveEc) && !resolveEc)
+                    {
+                        startupProjectPath = cwd;
+                    }
+                    else if (std::filesystem::exists(exeProjectHive, resolveEc) && !resolveEc)
+                    {
+                        startupProjectPath = exeProjectHive;
+                    }
+                    else if (std::filesystem::exists(exePak, resolveEc) && !resolveEc)
+                    {
+                        startupProjectPath = exeDir;
+                    }
+                    else
+                    {
+                        startupProjectPath = cwdProjectHive;
+                    }
                 }
 
                 if (!ResolveProjectFilePath(startupProjectPath, &startupProjectPath))
@@ -626,6 +654,21 @@ namespace
 
                 QObject::connect(s.m_mainWindow, &forge::ForgeMainWindow::buildRequested,
                                  [&s]() { StartGameplayBuild(s); });
+
+                QObject::connect(s.m_mainWindow, &forge::ForgeMainWindow::shipDialogRequested,
+                                 [&s]() {
+                                     if (s.m_project == nullptr || !s.m_project->IsOpen())
+                                     {
+                                         return;
+                                     }
+                                     auto* dlg = new forge::ShipDialog{s.m_mainWindow};
+                                     const std::string engineRootStr = s.m_hub.m_engineRoot.generic_string();
+                                     dlg->Configure(s.m_project, &s.m_componentRegistry,
+                                                    QString::fromUtf8(engineRootStr.c_str(),
+                                                                      static_cast<int>(engineRootStr.size())));
+                                     dlg->setAttribute(Qt::WA_DeleteOnClose);
+                                     dlg->show();
+                                 });
 
                 s.m_mainWindow->show();
 #endif

@@ -24,9 +24,11 @@
 #include <nectar/pipeline/i_asset_importer.h>
 #include <nectar/pipeline/import_pipeline.h>
 #include <nectar/pipeline/importer_registry.h>
+#include <nectar/pak/pak_reader.h>
 #include <nectar/registry/hiveid_file.h>
 #include <nectar/server/asset_server.h>
 #include <nectar/vfs/disk_mount.h>
+#include <nectar/vfs/pak_mount.h>
 #include <nectar/vfs/virtual_filesystem.h>
 #include <nectar/watcher/file_watcher.h>
 
@@ -220,32 +222,106 @@ namespace waggle
             Close();
         }
 
-        auto loadResult = m_project.LoadFromDisk(projectHivePath);
-        if (!loadResult.m_success)
+        std::filesystem::path fsPath{wax::String{projectHivePath}.CStr()};
+        std::error_code fsEc;
+        std::filesystem::path rootDir;
+        bool inputIsDir = false;
+        if (std::filesystem::is_directory(fsPath, fsEc) && !fsEc)
         {
-            hive::LogError(LOG_PROJECT, "Failed to load project file");
-            return false;
+            rootDir = fsPath;
+            inputIsDir = true;
+        }
+        else
+        {
+            rootDir = fsPath.parent_path();
+        }
+        const std::string rootStr = rootDir.generic_string();
+        const wax::StringView rootView{rootStr.c_str(), rootStr.size()};
+
+        m_vfs = wax::MakeBox<nectar::VirtualFilesystem>(*m_alloc, *m_alloc);
+
+        const std::filesystem::path packPath = rootDir / "assets.hivepak";
+        std::error_code packEc;
+        const bool packExists = std::filesystem::exists(packPath, packEc);
+        if (packExists)
+        {
+            const std::string pakStr = packPath.generic_string();
+            nectar::PakReader* reader =
+                nectar::PakReader::Open(wax::StringView{pakStr.c_str(), pakStr.size()}, *m_alloc);
+            if (reader != nullptr)
+            {
+                m_pakMount = wax::MakeBox<nectar::PakMountSource>(*m_alloc, reader, *m_alloc);
+                m_vfs->Mount(wax::StringView{"", 0}, m_pakMount.Get(), 100);
+                m_isShipped = true;
+                hive::LogInfo(LOG_PROJECT, "Shipped mode: mounted {}", pakStr.c_str());
+            }
+            else
+            {
+                hive::LogError(LOG_PROJECT, "Failed to open pak: {}", pakStr.c_str());
+            }
         }
 
-        std::filesystem::path fsPath{wax::String{projectHivePath}.CStr()};
-        auto rootStr = fsPath.parent_path().generic_string();
-        wax::StringView rootView{rootStr.c_str(), rootStr.size()};
+        if (m_isShipped)
+        {
+            wax::ByteBuffer projectBlob =
+                m_vfs->ReadSync(wax::StringView{"__project.hive", std::strlen("__project.hive")});
+            if (projectBlob.IsEmpty())
+            {
+                hive::LogError(LOG_PROJECT, "Shipped pak missing __project.hive entry");
+                m_pakMount.Reset();
+                m_vfs.Reset();
+                return false;
+            }
+            wax::StringView tomlView{reinterpret_cast<const char*>(projectBlob.Data()), projectBlob.Size()};
+            auto loadResult = m_project.Load(tomlView);
+            if (!loadResult.m_success)
+            {
+                hive::LogError(LOG_PROJECT, "Failed to parse __project.hive from pak");
+                m_pakMount.Reset();
+                m_vfs.Reset();
+                return false;
+            }
+        }
+        else
+        {
+            if (inputIsDir)
+            {
+                hive::LogError(LOG_PROJECT, "Directory has no project.hive and no assets.hivepak");
+                return false;
+            }
+            auto loadResult = m_project.LoadFromDisk(projectHivePath);
+            if (!loadResult.m_success)
+            {
+                hive::LogError(LOG_PROJECT, "Failed to load project file");
+                return false;
+            }
+        }
 
         m_paths = m_project.ResolvePaths(rootView);
 
         std::error_code ec;
-        std::filesystem::create_directories(m_paths.m_cache.CStr(), ec);
-        std::filesystem::create_directories(m_paths.m_cas.CStr(), ec);
+        if (!m_isShipped)
+        {
+            std::filesystem::create_directories(m_paths.m_cache.CStr(), ec);
+            std::filesystem::create_directories(m_paths.m_cas.CStr(), ec);
 
-        m_vfs = wax::MakeBox<nectar::VirtualFilesystem>(*m_alloc, *m_alloc);
-        m_assetsMount = wax::MakeBox<nectar::DiskMountSource>(*m_alloc, m_paths.m_assets, *m_alloc);
-        m_vfs->Mount("", m_assetsMount.Get());
-        m_casMount = wax::MakeBox<nectar::DiskMountSource>(*m_alloc, m_paths.m_cas, *m_alloc);
-        m_vfs->Mount("cas", m_casMount.Get());
+            m_assetsMount = wax::MakeBox<nectar::DiskMountSource>(*m_alloc, m_paths.m_assets, *m_alloc);
+            m_vfs->Mount("", m_assetsMount.Get());
+            m_casMount = wax::MakeBox<nectar::DiskMountSource>(*m_alloc, m_paths.m_cas, *m_alloc);
+            m_vfs->Mount("cas", m_casMount.Get());
 
-        m_cas = wax::MakeBox<nectar::CasStore>(*m_alloc, *m_alloc, m_paths.m_cas);
+            m_cas = wax::MakeBox<nectar::CasStore>(*m_alloc, *m_alloc, m_paths.m_cas);
+        }
         m_io = wax::MakeBox<nectar::IOScheduler>(*m_alloc, *m_vfs, *m_alloc, m_jobs);
         m_server = wax::MakeBox<nectar::AssetServer>(*m_alloc, *m_alloc, *m_vfs, *m_io);
+
+        if (m_isShipped)
+        {
+            m_open = true;
+            hive::LogInfo(LOG_PROJECT, "Project '{}' opened (shipped, root: {})", m_project.Name().Data(),
+                          m_paths.m_root.CStr());
+            return true;
+        }
 
         m_importerRegistry = wax::MakeBox<nectar::ImporterRegistry>(*m_alloc, *m_alloc);
         m_cookerRegistry = wax::MakeBox<nectar::CookerRegistry>(*m_alloc, *m_alloc);
@@ -468,6 +544,17 @@ namespace waggle
             m_io->Shutdown();
         }
 
+        if (m_isShipped)
+        {
+            m_server.Reset();
+            m_io.Reset();
+            m_pakMount.Reset();
+            m_vfs.Reset();
+            m_isShipped = false;
+            m_open = false;
+            return;
+        }
+
         SaveImportCache();
 
         if (m_importDb)
@@ -520,11 +607,19 @@ namespace waggle
 
     void ProjectManager::RegisterImporter(nectar::IAssetImporter* importer)
     {
+        if (m_importerRegistry.IsNull())
+        {
+            return;
+        }
         m_importerRegistry->Register(importer);
     }
 
     void ProjectManager::RegisterCooker(nectar::IAssetCooker* cooker)
     {
+        if (m_cookerRegistry.IsNull())
+        {
+            return;
+        }
         m_cookerRegistry->Register(cooker);
     }
 
@@ -706,6 +801,18 @@ namespace waggle
 
     wax::ByteBuffer ProjectManager::ReadCookedBlob(nectar::AssetId id)
     {
+        if (m_isShipped)
+        {
+            if (!m_vfs)
+            {
+                return wax::ByteBuffer{};
+            }
+            char key[48];
+            std::snprintf(key, sizeof(key), "__cooked/%016llx%016llx",
+                          static_cast<unsigned long long>(id.High()),
+                          static_cast<unsigned long long>(id.Low()));
+            return m_vfs->ReadSync(wax::StringView{key, std::strlen(key)});
+        }
         if (!m_cookCache || !m_cas)
         {
             return wax::ByteBuffer{};

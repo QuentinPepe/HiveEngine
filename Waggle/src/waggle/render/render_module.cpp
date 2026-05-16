@@ -25,6 +25,7 @@
 #include <swarm/swarm.h>
 
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 
 namespace waggle
@@ -356,7 +357,8 @@ namespace waggle
         }
 
         auto& alloc = GetCacheAllocator();
-        nectar::AssetDatabase& db = project.Database();
+        const bool shipped = project.IsShipped();
+        nectar::AssetDatabase* db = shipped ? nullptr : &project.Database();
         for (size_t i = 0; i < parsed.m_shaderAsset->m_textureAnnotations.Size(); ++i)
         {
             const auto& annotation = parsed.m_shaderAsset->m_textureAnnotations[i];
@@ -366,14 +368,25 @@ namespace waggle
             {
                 continue;
             }
-            const auto* record = db.FindByUuid(*texId);
-            if (record == nullptr)
-            {
-                continue;
-            }
             TextureRef ref{};
             ref.m_id = *texId;
-            ref.m_debugPath = wax::String{alloc, record->m_path.View()};
+            if (shipped)
+            {
+                char idKey[42];
+                std::snprintf(idKey, sizeof(idKey), "shipped:%016llx%016llx",
+                              static_cast<unsigned long long>(texId->High()),
+                              static_cast<unsigned long long>(texId->Low()));
+                ref.m_debugPath = wax::String{alloc, wax::StringView{idKey, std::strlen(idKey)}};
+            }
+            else
+            {
+                const auto* record = db->FindByUuid(*texId);
+                if (record == nullptr)
+                {
+                    continue;
+                }
+                ref.m_debugPath = wax::String{alloc, record->m_path.View()};
+            }
             outRefs.PushBack(static_cast<TextureRef&&>(ref));
         }
     }
@@ -1241,7 +1254,8 @@ namespace waggle
             return nullptr;
         }
 
-        nectar::AssetDatabase& db = project.Database();
+        const bool shipped = project.IsShipped();
+        nectar::AssetDatabase* db = shipped ? nullptr : &project.Database();
         const nectar::MaterialAsset* matAsset = parsed.m_matAsset;
         const nectar::ShaderProgramAsset* prog = parsed.m_shaderAsset;
 
@@ -1285,12 +1299,23 @@ namespace waggle
             swarm::Texture* texture = nullptr;
             wax::String key{alloc, annotation.m_name.View()};
             const nectar::AssetId* texId = matAsset->m_data.m_textureBindings.Find(key);
-            if (texId != nullptr)
+            if (texId != nullptr && texId->IsValid())
             {
-                const auto* record = db.FindByUuid(*texId);
-                if (record != nullptr)
+                if (shipped)
                 {
-                    texture = AcquireTexture(*texId, record->m_path.View(), project);
+                    char idKey[42];
+                    std::snprintf(idKey, sizeof(idKey), "shipped:%016llx%016llx",
+                                  static_cast<unsigned long long>(texId->High()),
+                                  static_cast<unsigned long long>(texId->Low()));
+                    texture = AcquireTexture(*texId, wax::StringView{idKey, std::strlen(idKey)}, project);
+                }
+                else
+                {
+                    const auto* record = db->FindByUuid(*texId);
+                    if (record != nullptr)
+                    {
+                        texture = AcquireTexture(*texId, record->m_path.View(), project);
+                    }
                 }
             }
 

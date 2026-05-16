@@ -82,7 +82,11 @@ object CMakeUserPresetsGenerator {
                                 REQUIRED_FEATURE_IDS.forEach { featureId ->
                                     val feature = featuresById[featureId] ?: return@forEach
                                     feature.cmakeVar?.let { cmakeVar ->
-                                        put(cmakeVar, toCMakeValue(feature, config.features[feature.id]))
+                                        val rawValue = toCMakeValue(feature, config.features[feature.id])
+                                        val finalValue =
+                                            if (buildConfig == "Retail" && feature.retailStripped && feature.type == "bool") "OFF"
+                                            else rawValue
+                                        put(cmakeVar, finalValue)
                                     }
                                 }
                             },

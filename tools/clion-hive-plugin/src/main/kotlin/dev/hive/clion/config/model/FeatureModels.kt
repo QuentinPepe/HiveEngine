@@ -27,6 +27,7 @@ data class FeatureDefinition(
     val platforms: List<String> = emptyList(),
     val defaults: Map<String, Any?> = emptyMap(),
     val options: List<FeatureOption> = emptyList(),
+    val retailStripped: Boolean = false,
 ) {
     fun defaultValueFor(mode: String): String {
         val value = defaults[mode]

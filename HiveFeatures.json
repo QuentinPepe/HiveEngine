@@ -79,6 +79,7 @@
           "cmakeVar": "HIVE_FEATURE_LOGGING",
           "macro": "HIVE_FEATURE_LOGGING",
           "type": "bool",
+          "retailStripped": true,
           "defaults": {
             "Editor": true,
             "Game": true,
@@ -92,6 +93,7 @@
           "cmakeVar": "HIVE_FEATURE_ASSERTS",
           "macro": "HIVE_FEATURE_ASSERTS",
           "type": "bool",
+          "retailStripped": true,
           "defaults": {
             "Editor": true,
             "Game": true,
@@ -105,6 +107,7 @@
           "cmakeVar": "HIVE_FEATURE_PROFILER",
           "macro": "HIVE_FEATURE_PROFILER",
           "type": "bool",
+          "retailStripped": true,
           "defaults": {
             "Editor": true,
             "Game": true,
@@ -131,6 +134,7 @@
           "cmakeVar": "HIVE_FEATURE_CONSOLE",
           "macro": "HIVE_FEATURE_CONSOLE",
           "type": "bool",
+          "retailStripped": true,
           "defaults": {
             "Editor": true,
             "Game": true,

@@ -168,7 +168,9 @@ namespace waggle
         {
             SetBuildSignatureError(m_errorBuf, dllPath);
             hive::LogError(LOG_GAMEPLAY, "{}", m_errorBuf.Data());
-            m_lib.Unload();
+            // Do NOT FreeLibrary: a mismatched-ABI DLL's static dtors can crash on detach.
+            // Abandon the handle and clear function pointers; OS reclaims on process exit.
+            (void)m_lib.Detach();
             m_registerFn = nullptr;
             m_unregisterFn = nullptr;
             m_versionFn = nullptr;

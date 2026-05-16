@@ -659,10 +659,21 @@ namespace brood::launcher
         std::filesystem::path candidate = inputPath;
         if (std::filesystem::is_directory(candidate, ec) && !ec)
         {
-            candidate /= "project.hive";
+            const std::filesystem::path hivePath = candidate / "project.hive";
+            if (std::filesystem::exists(hivePath, ec) && !ec)
+            {
+                candidate = hivePath;
+            }
+            else
+            {
+                const std::filesystem::path pakPath = candidate / "assets.hivepak";
+                if (!std::filesystem::exists(pakPath, ec) || ec)
+                {
+                    return false;
+                }
+            }
         }
-
-        if (!std::filesystem::exists(candidate, ec) || ec)
+        else if (!std::filesystem::exists(candidate, ec) || ec)
         {
             return false;
         }

@@ -19,6 +19,8 @@ namespace nectar
 {
     class VirtualFilesystem;
     class DiskMountSource;
+    class PakMountSource;
+    class PakReader;
     class CasStore;
     class AssetDatabase;
     class ImporterRegistry;
@@ -83,6 +85,11 @@ namespace waggle
 
         [[nodiscard]] wax::ByteBuffer ReadCookedBlob(nectar::AssetId id);
 
+        [[nodiscard]] bool IsShipped() const noexcept
+        {
+            return m_isShipped;
+        }
+
     private:
         comb::DefaultAllocator* m_alloc;
         drone::JobSubmitter m_jobs;
@@ -95,6 +102,8 @@ namespace waggle
         wax::Box<nectar::DiskMountSource> m_assetsMount;
         wax::Box<nectar::DiskMountSource> m_casMount;
         wax::Box<nectar::DiskMountSource> m_engineMount;
+        wax::Box<nectar::PakMountSource> m_pakMount;
+        bool m_isShipped{false};
         wax::Box<nectar::CasStore> m_cas;
         wax::Box<nectar::IOScheduler> m_io;
         wax::Box<nectar::AssetServer> m_server;

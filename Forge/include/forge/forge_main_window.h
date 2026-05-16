@@ -87,6 +87,7 @@ namespace forge
         void sceneOpenRequested(const QString& path);
         void sceneModified();
         void buildRequested();
+        void shipDialogRequested();
         void assetRenamed(const QString& oldPath, const QString& newPath);
         void assetDeleted(const QString& path);
 

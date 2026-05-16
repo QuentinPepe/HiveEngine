@@ -12,6 +12,7 @@
 #include <nectar/pak/npak_format.h>
 
 #include <cstdio>
+#include <mutex>
 
 namespace nectar
 {
@@ -55,5 +56,6 @@ namespace nectar
         wax::Vector<NpakAssetEntry>* m_assetEntries{nullptr};
         wax::Vector<NpakBlockEntry>* m_blockEntries{nullptr};
         AssetManifest* m_manifest{nullptr};
+        mutable std::mutex m_fileMutex;
     };
 } // namespace nectar

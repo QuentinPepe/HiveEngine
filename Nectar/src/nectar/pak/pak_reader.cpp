@@ -193,8 +193,12 @@ namespace nectar
             wax::ByteBuffer compressed{alloc};
             compressed.Resize(be.m_compressedSize);
 
-            nectar::FileSeek64(m_file, be.m_fileOffset, SEEK_SET);
-            size_t read = std::fread(compressed.Data(), 1, be.m_compressedSize, m_file);
+            size_t read = 0;
+            {
+                std::lock_guard<std::mutex> lock{m_fileMutex};
+                nectar::FileSeek64(m_file, be.m_fileOffset, SEEK_SET);
+                read = std::fread(compressed.Data(), 1, be.m_compressedSize, m_file);
+            }
             if (read != be.m_compressedSize)
             {
                 result.Clear();

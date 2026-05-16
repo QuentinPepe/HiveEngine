@@ -24,8 +24,12 @@ target_sources(Waggle
         src/waggle/profiling/frame_bench.cpp
         src/waggle/project/project_manager.cpp
         src/waggle/project/gameplay_module.cpp
+        src/waggle/project/cmake_build.cpp
         src/waggle/project/cmake_generator.cpp
         src/waggle/project/project_scaffolder.cpp
+        src/waggle/project/ship_pak_writer.cpp
+        src/waggle/project/ship_pipeline.cpp
+        src/waggle/scene/asset_reachability.cpp
         src/waggle/scene/gltf_scene_loader.cpp
         src/waggle/scene/scene_io.cpp
         src/waggle/disabled_propagation.cpp

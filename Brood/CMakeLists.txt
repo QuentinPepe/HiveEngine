@@ -69,6 +69,10 @@ endif()
 
 if(WIN32)
     target_link_libraries(hive_launcher PRIVATE Ole32 Shell32)
+    if(CMAKE_BUILD_TYPE STREQUAL "Retail")
+        set_target_properties(hive_launcher PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_link_options(hive_launcher PRIVATE "/ENTRY:mainCRTStartup")
+    endif()
 endif()
 
 # ============================================================================

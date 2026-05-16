@@ -29,6 +29,13 @@ namespace waggle
                             const queen::ComponentRegistry<256>& registry,
                             const char* path);
 
+    // Same as LoadScene but reads from an in-memory buffer (NUL-terminated JSON).
+    // Used in shipped mode where scenes come from the .hivepak rather than disk.
+    HIVE_API bool LoadSceneFromMemory(queen::World& world,
+                                      const queen::ComponentRegistry<256>& registry,
+                                      const char* jsonData,
+                                      size_t jsonSize);
+
     // For every entity that has a Transform but is missing WorldMatrix or
     // TransformVersion, add them with values derived from the Transform. Call
     // after any deserialization pass — these components are runtime-only and

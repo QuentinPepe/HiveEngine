@@ -8,6 +8,7 @@
 
 #include <queen/reflect/component_registry.h>
 
+#include <waggle/project/cmake_build.h>
 #include <waggle/project/project_manager.h>
 #include <waggle/scene/scene_io.h>
 
@@ -22,6 +23,7 @@
 #include <nectar/shader/shader_importer.h>
 #include <nectar/shader_program/shader_program_importer.h>
 #include <nectar/texture/texture_importer.h>
+#include <nectar/vfs/virtual_filesystem.h>
 
 #include <waggle/app_context.h>
 #include <waggle/project/project_context.h>
@@ -83,6 +85,51 @@ namespace brood::launcher
         return {};
     }
 
+    static bool RebuildGameplaySynchronously()
+    {
+        const std::filesystem::path exePath = GetCurrentExecutablePath();
+        const std::filesystem::path buildDir = exePath.parent_path().parent_path().parent_path();
+        std::error_code ec;
+        if (!std::filesystem::exists(buildDir / "CMakeCache.txt", ec))
+        {
+            std::fprintf(stderr, "[Hive.Launcher] Cannot auto-rebuild gameplay: not in a CMake build dir (%s)\n",
+                         buildDir.generic_string().c_str());
+            std::fflush(stderr);
+            return false;
+        }
+
+        const std::string buildDirGeneric = buildDir.generic_string();
+        std::string cmd = "cmake --build \"";
+        cmd += buildDirGeneric;
+        cmd += "\" --target gameplay.dll";
+
+        std::fprintf(stderr, "[Hive.Launcher] Auto-rebuilding gameplay module: %s\n", cmd.c_str());
+        std::fflush(stderr);
+
+        const int result = std::system(cmd.c_str());
+        std::fprintf(stderr, "[Hive.Launcher] Auto-rebuild finished with exit code %d\n", result);
+        std::fflush(stderr);
+        if (result != 0)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    static bool LoadGameplayDll(waggle::EngineContext& ctx, LauncherState& state, const char* loadPath)
+    {
+        const bool loaded = state.m_gameplay.Load(loadPath);
+        if (!loaded)
+        {
+            return false;
+        }
+        if (!state.m_gameplay.Register(*ctx.m_world))
+        {
+            hive::LogWarning(LOG_LAUNCHER, "Gameplay DLL Register() failed");
+        }
+        return true;
+    }
+
     void TryLoadGameplayModule(waggle::EngineContext& ctx, LauncherState& state)
     {
         const wax::String root{state.m_project->Paths().m_root};
@@ -99,32 +146,72 @@ namespace brood::launcher
         }
 
         std::filesystem::path p{dllPath.CStr()};
-        auto shadowFsPath = p.parent_path() / (p.stem().string() + "_live" + p.extension().string());
-        std::error_code ec;
-        std::filesystem::copy_file(p, shadowFsPath, std::filesystem::copy_options::overwrite_existing, ec);
-
-        std::string shadowStr = shadowFsPath.string();
-        const char* loadPath = ec ? dllPath.CStr() : shadowStr.c_str();
-
-        hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: attempting load of {}", loadPath);
-        const bool loaded = state.m_gameplay.Load(loadPath);
-        hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: Load returned {}", loaded ? "true" : "false");
-        if (loaded)
+        std::string shadowStr;
+        const char* loadPath = dllPath.CStr();
+        if (!state.m_project->IsShipped())
         {
-            if (!state.m_gameplay.Register(*ctx.m_world))
-                hive::LogWarning(LOG_LAUNCHER, "Gameplay DLL Register() failed");
-        }
-        else
-        {
-            hive::LogError(LOG_LAUNCHER, "Failed to load gameplay DLL. Auto-rebuild attempted={}",
-                           state.m_gameplayAutoRebuildAttempted ? "true" : "false");
-            if (!state.m_gameplayAutoRebuildAttempted)
+            auto shadowFsPath = p.parent_path() / (p.stem().string() + "_live" + p.extension().string());
+            std::error_code ec;
+            std::filesystem::copy_file(p, shadowFsPath, std::filesystem::copy_options::overwrite_existing, ec);
+            shadowStr = shadowFsPath.string();
+            if (!ec)
             {
-                state.m_gameplayAutoRebuildAttempted = true;
-                state.m_gameplayBuildRequested = true;
-                hive::LogError(LOG_LAUNCHER, "Triggering automatic gameplay module rebuild...");
+                loadPath = shadowStr.c_str();
             }
         }
+
+        hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: attempting load of {}", loadPath);
+        if (LoadGameplayDll(ctx, state, loadPath))
+        {
+            hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: Load returned true");
+            return;
+        }
+
+        std::fprintf(stderr, "[Hive.Launcher] Initial gameplay DLL load failed; attempting synchronous rebuild\n");
+        std::fflush(stderr);
+        hive::LogError(LOG_LAUNCHER, "Initial gameplay DLL load failed; attempting synchronous rebuild");
+        if (state.m_project->IsShipped() || state.m_gameplayAutoRebuildAttempted)
+        {
+            hive::LogError(LOG_LAUNCHER, "Auto-rebuild already attempted or shipped mode; giving up");
+            return;
+        }
+        state.m_gameplayAutoRebuildAttempted = true;
+
+        if (!RebuildGameplaySynchronously())
+        {
+            return;
+        }
+
+        // The previous shadow (gameplay_live.dll) is still locked by the abandoned
+        // mismatched-ABI DLL. Write a versioned shadow next to it so the rebuilt DLL
+        // can be loaded without overwriting a locked file.
+        if (!state.m_project->IsShipped())
+        {
+            auto versionedShadow =
+                p.parent_path() / (p.stem().string() + "_rebuilt" + p.extension().string());
+            std::error_code ec;
+            std::filesystem::copy_file(p, versionedShadow, std::filesystem::copy_options::overwrite_existing, ec);
+            shadowStr = versionedShadow.string();
+            if (!ec)
+            {
+                loadPath = shadowStr.c_str();
+            }
+            else
+            {
+                std::fprintf(stderr, "[Hive.Launcher] Failed to copy rebuilt DLL to shadow: %s\n",
+                             ec.message().c_str());
+                std::fflush(stderr);
+                loadPath = dllPath.CStr();
+            }
+        }
+
+        hive::LogInfo(LOG_LAUNCHER, "Retrying gameplay DLL load after rebuild: {}", loadPath);
+        if (LoadGameplayDll(ctx, state, loadPath))
+        {
+            hive::LogInfo(LOG_LAUNCHER, "TryLoadGameplayModule: Load returned true (after rebuild)");
+            return;
+        }
+        hive::LogError(LOG_LAUNCHER, "Gameplay DLL still failed to load after rebuild");
     }
 
     namespace
@@ -322,7 +409,12 @@ namespace brood::launcher
             }
         }
 
-        if (std::filesystem::is_directory(projectAssetsDir))
+        if (state.m_project->IsShipped())
+        {
+            hive::LogInfo(LOG_LAUNCHER, "Shipped mode (assets.hivepak detected); skipping asset scan/cook");
+            ReportProgress(progress, progressUd, "Scanning assets", 1, 1);
+        }
+        else if (std::filesystem::is_directory(projectAssetsDir))
         {
             const auto scanStart = std::chrono::steady_clock::now();
             const std::filesystem::path stampPath =
@@ -508,11 +600,29 @@ namespace brood::launcher
             if (!startupScene.IsEmpty())
             {
                 ReportProgress(progress, progressUd, "Loading scene", 0, 1);
-                const std::filesystem::path startupScenePath =
-                    std::filesystem::path{state.m_project->Paths().m_assets.CStr()}
-                    / wax::String{startupScene}.CStr();
-                (void)waggle::LoadScene(*ctx.m_world, state.m_componentRegistry,
-                                        startupScenePath.string().c_str());
+                if (state.m_project->IsShipped())
+                {
+                    wax::ByteBuffer sceneBlob = state.m_project->VFS().ReadSync(startupScene);
+                    if (sceneBlob.IsEmpty())
+                    {
+                        hive::LogError(LOG_LAUNCHER, "Shipped scene not in pak: {}",
+                                       wax::String{startupScene}.CStr());
+                    }
+                    else
+                    {
+                        (void)waggle::LoadSceneFromMemory(*ctx.m_world, state.m_componentRegistry,
+                                                         reinterpret_cast<const char*>(sceneBlob.Data()),
+                                                         sceneBlob.Size());
+                    }
+                }
+                else
+                {
+                    const std::filesystem::path startupScenePath =
+                        std::filesystem::path{state.m_project->Paths().m_assets.CStr()}
+                        / wax::String{startupScene}.CStr();
+                    (void)waggle::LoadScene(*ctx.m_world, state.m_componentRegistry,
+                                            startupScenePath.string().c_str());
+                }
                 ReportProgress(progress, progressUd, "Loading scene", 1, 1);
 
                 if (ctx.m_renderModule != nullptr)

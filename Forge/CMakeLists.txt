@@ -50,6 +50,9 @@ target_sources(Forge
         src/forge/console_panel.cpp
         src/forge/toolbar.cpp
         src/forge/scene_file.cpp
+        src/forge/ship_dialog.cpp
+        src/forge/ship_progress_dialog.cpp
+        src/forge/ship_worker.cpp
         src/forge/forge_module.cpp
         src/forge/forge_main_window.cpp
         src/forge/progress_overlay.cpp
@@ -66,6 +69,9 @@ target_sources(Forge
         include/forge/toolbar.h
         include/forge/forge_main_window.h
         include/forge/progress_overlay.h
+        include/forge/ship_dialog.h
+        include/forge/ship_progress_dialog.h
+        include/forge/ship_worker.h
 )
 
 target_include_directories(Forge

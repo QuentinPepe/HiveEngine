@@ -524,6 +524,15 @@ namespace forge
             if (m_editorUndo && m_editorUndo->Redo())
                 RefreshAll();
         });
+
+        auto* buildMenu = menuBar()->addMenu("&Build");
+
+        auto* buildGameplayAction = buildMenu->addAction("Build &Gameplay");
+        buildGameplayAction->setShortcut(QKeySequence{"Ctrl+B"});
+        connect(buildGameplayAction, &QAction::triggered, this, &ForgeMainWindow::buildRequested);
+
+        auto* shipAction = buildMenu->addAction("&Package && Ship...");
+        connect(shipAction, &QAction::triggered, this, &ForgeMainWindow::shipDialogRequested);
     }
 
     void ForgeMainWindow::CreateDocks()
