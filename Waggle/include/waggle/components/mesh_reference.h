@@ -17,7 +17,7 @@ namespace waggle
 
         static void Reflect(queen::ComponentReflector<>& r)
         {
-            r.Field("mesh", &MeshReference::m_meshName);
+            r.Field("mesh", &MeshReference::m_meshName).Flag(queen::FieldFlag::FILE_PATH);
             r.Field("material", &MeshReference::m_material).Flag(queen::FieldFlag::FILE_PATH);
             r.Field("indices", &MeshReference::m_indexCount).Flag(queen::FieldFlag::READ_ONLY);
             r.Field("mesh_index", &MeshReference::m_meshIndex).Flag(queen::FieldFlag::READ_ONLY);
